@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  供 FileProvider 使用:让系统"应用安装器"能读到我们下载好的 APK。
+  Android 7.0 起,直接把 file:// 路径丢给其他 App 会抛
+  FileUriExposedException,必须通过 FileProvider 授予临时读权限。
+
+  path_provider 的 getExternalStorageDirectory() 在 Android 上返回的是
+  /storage/emulated/0/Android/data/com.daka.daka/files,即下面第一条规则。
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- App 私有外部 files 目录(APK 下载位置) -->
+    <external-files-path name="files" path="." />
+    <!-- 兜底:缓存目录 -->
+    <external-cache-path name="cache" path="." />
+</paths>

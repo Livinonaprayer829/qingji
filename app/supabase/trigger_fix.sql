@@ -11,3 +11,8 @@ begin
   return new;
 end;
 $$ language plpgsql security definer;
+
+-- 借入借出表也启用严格 last-write-wins 触发器
+drop trigger if exists trg_loans_updated on public.loans;
+create trigger trg_loans_updated before update on public.loans
+  for each row execute function public.set_updated_at();

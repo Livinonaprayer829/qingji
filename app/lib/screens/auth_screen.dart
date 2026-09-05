@@ -70,6 +70,11 @@ class _AuthScreenState extends State<AuthScreen> {
           return;
         }
       }
+      // 登录/注册成功:若本页是被 push 进来的(例如从「数据同步」页点「去登录」进入),
+      // 就自动返回上一页;若本页是 AuthGate 的 home,则无需 pop,由 AuthGate 切到主页。
+      if (mounted && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
     } on AuthException catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
@@ -93,7 +98,7 @@ class _AuthScreenState extends State<AuthScreen> {
                 const Icon(Icons.account_balance_wallet,
                     size: 56, color: Color(0xFF3F7CAC)),
                 const SizedBox(height: 12),
-                Text(_isLogin ? '登录 Daka' : '注册 Daka',
+                Text(_isLogin ? '登录 青记' : '注册 青记',
                     style: Theme.of(context).textTheme.headlineSmall,
                     textAlign: TextAlign.center),
                 const SizedBox(height: 24),

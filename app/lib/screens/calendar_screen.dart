@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models.dart';
 import '../providers.dart';
-import '../widgets/txn_tile.dart';
+import '../widgets/day_detail_sheet.dart';
 
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
@@ -35,14 +35,13 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final leading = firstWeekday - 1;
 
     final Map<int, double> daySum = {};
-    final Map<int, List<Txn>> dayTxns = {};
     for (final t in data.transactions) {
       if (t.date.year == _focused.year && t.date.month == _focused.month) {
         daySum[t.date.day] = (daySum[t.date.day] ?? 0) + t.amount;
-        dayTxns.putIfAbsent(t.date.day, () => []).add(t);
       }
     }
 
+    final today = DateTime.now();
     final cells = <Widget>[];
     for (int i = 0; i < leading; i++) {
       cells.add(const SizedBox());
@@ -50,16 +49,24 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     for (int d = 1; d <= daysInMonth; d++) {
       final has = daySum.containsKey(d);
       final sum = daySum[d] ?? 0;
+      final isToday = today.year == _focused.year &&
+          today.month == _focused.month &&
+          today.day == d;
       cells.add(
         InkWell(
-          onTap: has
-              ? () => _showDay(context, d, dayTxns[d] ?? [])
-              : null,
+          // 任何日期（含过去的空日子）都可点开，进入当日详情增删改
+          onTap: () => _showDay(
+              context, DateTime(_focused.year, _focused.month, d)),
+          borderRadius: BorderRadius.circular(10),
           child: Container(
             margin: const EdgeInsets.all(3),
             decoration: BoxDecoration(
               color: has
                   ? Theme.of(context).colorScheme.primary.withOpacity(0.08)
+                  : null,
+              border: isToday
+                  ? Border.all(
+                      color: Theme.of(context).colorScheme.primary, width: 1.5)
                   : null,
               borderRadius: BorderRadius.circular(10),
             ),
@@ -68,7 +75,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
               children: [
                 Text('$d',
                     style: TextStyle(
-                        fontWeight: has ? FontWeight.bold : FontWeight.normal)),
+                        fontWeight: has || isToday
+                            ? FontWeight.bold
+                            : FontWeight.normal)),
                 if (has)
                   Text('¥${sum.toStringAsFixed(0)}',
                       style: TextStyle(
@@ -127,30 +136,14 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     );
   }
 
-  void _showDay(BuildContext context, int day, List<Txn> txns) {
+  void _showDay(BuildContext context, DateTime day) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('$_focused.year-$_focused.month-$day',
-                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-            const SizedBox(height: 8),
-            ...txns
-                .map((t) => TxnTile(
-                      txn: t,
-                      onTap: () => Navigator.of(context).pop(),
-                    ))
-                ,
-          ],
-        ),
-      ),
+      builder: (_) => DayDetailSheet(day: day),
     );
   }
 }

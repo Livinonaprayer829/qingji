@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../providers.dart';
 import '../repository.dart';
+import 'auth_screen.dart';
 
 class SyncScreen extends ConsumerStatefulWidget {
   const SyncScreen({super.key});
@@ -63,7 +64,18 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
     try {
       await ref.read(appDataProvider.notifier).syncIncremental();
       await _loadCloud();
-      if (mounted) _toast('同步完成');
+      final loansErr = ref.read(appDataProvider.notifier).lastLoansError;
+      if (mounted) {
+        if (loansErr != null) {
+          final missing =
+              loansErr.contains('does not exist') || loansErr.contains('relation');
+          _toast(missing
+              ? '记账已同步;借还失败:云端 loans 表未创建,请在 Supabase 执行建表 SQL'
+              : '记账已同步;借还失败: $loansErr');
+        } else {
+          _toast('同步完成');
+        }
+      }
     } catch (e) {
       if (mounted) _toast('同步失败: $e');
     } finally {
@@ -226,7 +238,19 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
           ] else ...[
             const SizedBox(height: 8),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: _loading
+                  ? null
+                  : () async {
+                      // 真正跳转到登录页(此前这里只做了 pop,点了像"没反应")
+                      await Navigator.of(context).push(
+                        MaterialPageRoute(
+                            builder: (_) => const AuthScreen()),
+                      );
+                      // 从登录页返回后:刷新登录状态,已登录则重新拉取云端数据
+                      if (!mounted) return;
+                      setState(() {});
+                      if (_signedIn) await _loadCloud();
+                    },
               child: const Text('去登录'),
               style: ElevatedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 52)),

@@ -1,8 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- 联网权限:release 包走的是这份 manifest,缺了它 App 无法访问 Supabase(登录/同步全挂) -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- 应用内更新:允许本 App 请求安装 APK(Android 8+ 需用户首次手动授权一次) -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
-        android:label="daka"
+        android:label="青记"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -32,6 +34,18 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- 应用内更新:通过 FileProvider 把下载好的 APK 授权给系统安装器读取。
+             Android 7.0 起不允许直接把 file:// 暴露给其他应用,必须走这里。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileProvider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

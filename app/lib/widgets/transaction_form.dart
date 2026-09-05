@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models.dart';
 import '../providers.dart';
 
-void showTxnForm(BuildContext context, {Txn? editing}) {
+void showTxnForm(BuildContext context, {Txn? editing, DateTime? initialDate}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -13,14 +13,15 @@ void showTxnForm(BuildContext context, {Txn? editing}) {
     builder: (_) => Padding(
       padding: EdgeInsets.only(
           bottom: MediaQuery.of(context).viewInsets.bottom, left: 16, right: 16, top: 16),
-      child: TxnForm(editing: editing),
+      child: TxnForm(editing: editing, initialDate: initialDate),
     ),
   );
 }
 
 class TxnForm extends ConsumerStatefulWidget {
   final Txn? editing;
-  const TxnForm({super.key, this.editing});
+  final DateTime? initialDate;
+  const TxnForm({super.key, this.editing, this.initialDate});
   @override
   ConsumerState<TxnForm> createState() => _TxnFormState();
 }
@@ -53,7 +54,7 @@ class _TxnFormState extends ConsumerState<TxnForm> {
           ? data.categories.first.id
           : data.categories.firstWhere((c) => c.type == TxType.expense).id;
       _accountId = data.accounts.isNotEmpty ? data.accounts.first.id : null;
-      _date = DateTime.now();
+      _date = widget.initialDate ?? DateTime.now();
     }
   }
 
@@ -81,7 +82,7 @@ class _TxnFormState extends ConsumerState<TxnForm> {
     }
     final note = _noteCtl.text.trim();
     final txn = Txn(
-      id: widget.editing?.id ?? 't_${DateTime.now().microsecondsSinceEpoch}',
+      id: widget.editing?.id,
       amount: amt,
       type: _type,
       categoryId: _categoryId,

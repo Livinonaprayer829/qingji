@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models.dart';
 import '../providers.dart';
 import '../widgets/txn_tile.dart';
+import '../widgets/transaction_form.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -71,7 +72,10 @@ class HomeScreen extends ConsumerWidget {
               children: recentTop
                   .map((t) => Column(
                         children: [
-                          TxnTile(txn: t),
+                          TxnTile(
+                            txn: t,
+                            onTap: () => showTxnForm(context, editing: t),
+                          ),
                           if (t != recentTop.last)
                             const Divider(height: 1, indent: 72),
                         ],
