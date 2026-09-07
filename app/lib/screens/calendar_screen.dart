@@ -4,6 +4,14 @@ import '../models.dart';
 import '../providers.dart';
 import '../widgets/day_detail_sheet.dart';
 
+/// 净结余格式化:去掉多余的尾随 0(例如 -115.50 -> -115.5,200.00 -> 200)
+String _fmtNet(double v) {
+  final s = v.toStringAsFixed(2);
+  if (s.endsWith('.00')) return s.substring(0, s.length - 3);
+  if (s.endsWith('0')) return s.substring(0, s.length - 1);
+  return s;
+}
+
 class CalendarScreen extends ConsumerStatefulWidget {
   const CalendarScreen({super.key});
   @override
@@ -37,7 +45,9 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
     final Map<int, double> daySum = {};
     for (final t in data.transactions) {
       if (t.date.year == _focused.year && t.date.month == _focused.month) {
-        daySum[t.date.day] = (daySum[t.date.day] ?? 0) + t.amount;
+        // 支出记负数、收入记正数,格子展示当日净结余(收入 + (-支出))
+        final signed = t.type == TxType.income ? t.amount : -t.amount;
+        daySum[t.date.day] = (daySum[t.date.day] ?? 0) + signed;
       }
     }
 
@@ -79,10 +89,12 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
                             ? FontWeight.bold
                             : FontWeight.normal)),
                 if (has)
-                  Text('¥${sum.toStringAsFixed(0)}',
+                  Text('¥${_fmtNet(sum)}',
                       style: TextStyle(
                           fontSize: 10,
-                          color: Theme.of(context).colorScheme.primary)),
+                          color: sum < 0
+                              ? Colors.redAccent
+                              : Theme.of(context).colorScheme.primary)),
               ],
             ),
           ),
