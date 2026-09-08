@@ -21,6 +21,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
   StatsMode _mode = StatsMode.month;
   // 当前展示的期间起点：周=周一，月=1号，年=1月1日
   late DateTime _anchor;
+  // 饼图当前选中的分类(点扇区查看明细,再次点取消)
+  String? _selectedCat;
 
   @override
   void initState() {
@@ -122,6 +124,10 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       }
     }
 
+    // 分类按金额从大到小排序(饼图扇区与下方列表保持一致)
+    final sortedCats = byCat.keys.toList()
+      ..sort((a, b) => (byCat[b] ?? 0).compareTo(byCat[a] ?? 0));
+
     double sumFor(DateTime b) {
       double s = 0;
       for (final t in periodTxns) {
@@ -146,29 +152,33 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       Colors.amber,
       Colors.pink
     ];
-    final catKeys = byCat.keys.toList();
+    final catKeys = sortedCats;
     final sections = catKeys.asMap().entries.map((e) {
       final key = e.value;
       final v = byCat[key]!;
       final pct = totalExp > 0 ? (v / totalExp * 100) : 0;
+      final isSel = _selectedCat == key;
       return PieChartSectionData(
         value: v,
         title: '${pct.toStringAsFixed(0)}%',
         color: colors[e.key % colors.length],
-        radius: 70,
-        titleStyle: const TextStyle(
-            color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+        radius: isSel ? 84 : 70,
+        titleStyle: TextStyle(
+            color: Colors.white,
+            fontSize: isSel ? 13 : 12,
+            fontWeight: FontWeight.bold),
       );
     }).toList();
 
     final barW = _mode == StatsMode.month ? 8.0 : 16.0;
     final barGs = _mode == StatsMode.month ? 2.0 : 4.0;
     final barGroups = buckets.asMap().entries.map((e) {
+      final v = sumFor(e.value);
       return BarChartGroupData(
         x: e.key,
         barRods: [
           BarChartRodData(
-            toY: sumFor(e.value),
+            toY: v,
             width: barW,
             color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
             borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
@@ -272,6 +282,12 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         const SizedBox(height: 20),
         const Text('支出分类占比',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+        if (sections.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: Text('点击扇区查看分类明细',
+                style: TextStyle(color: Colors.grey, fontSize: 12)),
+          ),
         const SizedBox(height: 12),
         SizedBox(
           height: 220,
@@ -282,15 +298,112 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     sections: sections,
                     centerSpaceRadius: 40,
                     sectionsSpace: 2,
+                    pieTouchData: PieTouchData(
+                      touchCallback: (event, response) {
+                        if (response?.touchedSection == null) return;
+                        final idx = response!.touchedSection!.touchedSectionIndex;
+                        if (idx < 0 || idx >= catKeys.length) return;
+                        final key = catKeys[idx];
+                        setState(() =>
+                            _selectedCat = _selectedCat == key ? null : key);
+                      },
+                    ),
                   ),
                 ),
         ),
+        // 选中分类时显示该分类下的每一笔记录明细
+        if (_selectedCat != null && byCat.containsKey(_selectedCat)) ...[
+          const SizedBox(height: 12),
+          Builder(builder: (ctx) {
+            final key = _selectedCat!;
+            final i = catKeys.indexOf(key);
+            final cat = findCategory(data.categories, key);
+            final v = byCat[key]!;
+            final pct = totalExp > 0 ? (v / totalExp * 100) : 0;
+            final txns = periodTxns
+                .where((t) => t.type.isExpense && t.categoryId == key)
+                .toList()
+              ..sort((a, b) => b.date.compareTo(a.date));
+            return Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: colors[i % colors.length].withOpacity(0.1),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor:
+                            colors[i % colors.length].withOpacity(0.2),
+                        child: Text(cat?.icon ?? '💸',
+                            style: const TextStyle(fontSize: 22)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(cat?.name ?? '未知',
+                                style: const TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.w600)),
+                            const SizedBox(height: 2),
+                            Text('共 ${txns.length} 笔 · 占支出 ${pct.toStringAsFixed(1)}%',
+                                style: const TextStyle(
+                                    color: Colors.grey, fontSize: 12)),
+                          ],
+                        ),
+                      ),
+                      Text('¥${v.toStringAsFixed(2)}',
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: colors[i % colors.length])),
+                    ],
+                  ),
+                  if (txns.isNotEmpty) const Divider(height: 16),
+                  ...txns.map((t) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 5),
+                        child: Row(
+                          children: [
+                            Text('${t.date.month}月${t.date.day}日',
+                                style: const TextStyle(
+                                    color: Colors.grey, fontSize: 13)),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                  t.note?.isNotEmpty == true ? t.note! : '无备注',
+                                  style: const TextStyle(fontSize: 14),
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                            const SizedBox(width: 8),
+                            Text('¥${t.amount.toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                    fontSize: 14, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      )),
+                ],
+              ),
+            );
+          }),
+        ],
         if (sections.isNotEmpty) const SizedBox(height: 12),
         ...catKeys.asMap().entries.map((e) {
           final cat = findCategory(data.categories, e.value);
           final v = byCat[e.value]!;
           final pct = totalExp > 0 ? (v / totalExp * 100) : 0;
+          final isSel = _selectedCat == e.value;
           return ListTile(
+            onTap: () => setState(
+                () => _selectedCat = _selectedCat == e.value ? null : e.value),
+            tileColor: isSel
+                ? colors[e.key % colors.length].withOpacity(0.08)
+                : null,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
             leading: CircleAvatar(
               backgroundColor: colors[e.key % colors.length].withOpacity(0.15),
               child: Text(cat?.icon ?? '💸'),
