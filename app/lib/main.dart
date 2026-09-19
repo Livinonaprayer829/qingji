@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'screens/auth_screen.dart';
+import 'screens/splash_screen.dart';
 import 'supabase_config.dart';
 
 Future<void> main() async {
@@ -80,7 +81,7 @@ class MyApp extends StatelessWidget {
         dividerTheme: DividerThemeData(
             color: Colors.grey.shade200, thickness: 1, space: 1),
       ),
-      home: const AuthGate(),
+      home: const SplashScreen(next: AuthGate()),
     );
   }
 }
