@@ -2,15 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'net/force_ipv4.dart';
 import 'screens/auth_screen.dart';
 import 'screens/splash_screen.dart';
 import 'supabase_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // 规避国内部分运营商 IPv6 到 Cloudflare 路由不可用导致的连接重置
-  applyForceIPv4();
   await Supabase.initialize(url: supabaseUrl, publishableKey: supabaseAnonKey);
   runApp(const ProviderScope(child: MyApp()));
 }
