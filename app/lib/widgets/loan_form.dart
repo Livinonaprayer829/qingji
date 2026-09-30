@@ -43,6 +43,12 @@ class _LoanFormState extends ConsumerState<LoanForm> {
   // 当从筛选页点 + 带入 initialType 时,锁定该类型(不显示另一个、不可切换)
   bool get _locked => widget.initialType != null;
 
+  /// 日期栏文案:未锁定时是「借入/借出日期」;锁定后按当前类型显示「借出日期」/「借入日期」
+  String get _dateLabel {
+    if (!_locked) return '借入/借出日期';
+    return _type == LoanType.borrowOut ? '借出日期' : '借入日期';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -126,26 +132,37 @@ class _LoanFormState extends ConsumerState<LoanForm> {
               style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 18)),
           const SizedBox(height: 14),
           if (_locked)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.check, color: Colors.white, size: 18),
-                  const SizedBox(width: 6),
-                  Text(
-                    _type == LoanType.borrowOut ? '借出(别人欠我)' : '借入(我欠别人)',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white,
-                        fontSize: 15),
+            // 已由 tab 确定类型:只显示当前这一个选项,另一个按钮不出现
+            Row(
+              children: [
+                Text('类型',
+                    style:
+                        TextStyle(fontSize: 13, color: Colors.grey.shade600)),
+                const SizedBox(width: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .primary
+                        .withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                        color: Theme.of(context)
+                            .colorScheme
+                            .primary
+                            .withOpacity(0.3)),
                   ),
-                ],
-              ),
+                  child: Text(
+                    _type == LoanType.borrowOut ? '借出（别人欠我）' : '借入（我欠别人）',
+                    style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14),
+                  ),
+                ),
+              ],
             )
           else
             SegmentedButton<LoanType>(
@@ -174,7 +191,7 @@ class _LoanFormState extends ConsumerState<LoanForm> {
           ),
           const SizedBox(height: 12),
           _DateTile(
-              label: '借入/借出日期',
+              label: _dateLabel,
               date: _date,
               onTap: () => _pickDate(false)),
           const SizedBox(height: 8),

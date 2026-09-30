@@ -89,6 +89,13 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     return '${_anchor.year}年';
   }
 
+  /// 期间的具体日期区间,如 9.28～10.4（周/月显示;年不显示,避免冗余）
+  String get _periodRangeLabel {
+    final (start, end) = _range();
+    final last = end.subtract(const Duration(days: 1));
+    return '${start.month}.${start.day}～${last.month}.${last.day}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(appDataProvider);
@@ -225,9 +232,21 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                 color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: Text(_periodLabel,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.bold)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(_periodLabel,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold)),
+                  // 仅"按周"时在周期标签下补具体日期区间
+                  if (_mode == StatsMode.week) ...[
+                    const SizedBox(height: 2),
+                    Text(_periodRangeLabel,
+                        style: TextStyle(
+                            fontSize: 12.5, color: Colors.grey.shade700)),
+                  ],
+                ],
+              ),
             ),
             IconButton(
               onPressed: _canNext ? () => _step(1) : null,
@@ -278,6 +297,34 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        // 结余 = 收入 - 支出
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                const Text('结余',
+                    style: TextStyle(color: Colors.grey, fontSize: 12)),
+                const SizedBox(width: 8),
+                Text('（收入 − 支出）',
+                    style: TextStyle(
+                        color: Colors.grey.shade400, fontSize: 11)),
+                const Spacer(),
+                Text(
+                  '¥${(totalInc - totalExp).toStringAsFixed(2)}',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: (totalInc - totalExp) >= 0
+                        ? const Color(0xFF0E9E8E)
+                        : const Color(0xFFD9534F),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
         const SizedBox(height: 20),
         const Text('支出分类占比',

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import 'sync_screen.dart';
-import '../csv_export.dart';
+import 'export_screen.dart';
 import '../widgets/update_check_tile.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -71,9 +71,12 @@ class SettingsScreen extends ConsumerWidget {
         const UpdateCheckTile(),
         const SizedBox(height: 20),
         FilledButton.icon(
-          onPressed: () => exportCsv(context, data),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const ExportScreen()),
+          ),
           icon: const Icon(Icons.download),
-          label: const Text('导出 CSV'),
+          label: const Text('导出账单'),
         ),
         const SizedBox(height: 8),
         const Center(

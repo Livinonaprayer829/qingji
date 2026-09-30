@@ -7,7 +7,6 @@ import 'screens/stats_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/loan_screen.dart';
 import 'widgets/transaction_form.dart';
-import 'widgets/loan_form.dart';
 import 'widgets/update_dialog.dart';
 import 'update_config.dart';
 import 'update_service.dart';
@@ -92,18 +91,16 @@ class _DakaAppState extends State<DakaApp> {
               label: '借还'),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        backgroundColor: Theme.of(context).colorScheme.primary,
-        foregroundColor: Colors.white,
-        onPressed: () {
-          if (_idx == 5) {
-            showLoanForm(context);
-          } else {
-            showTxnForm(context);
-          }
-        },
-        child: const Icon(Icons.add),
-      ),
+      // 借还页(下标5)由 LoanScreen 自己提供 FAB(需要带上当前筛选的借出/借入类型),
+      // 这里不再重复提供,否则外层的 FAB 会盖住它、导致弹窗拿不到 tab 状态。
+      floatingActionButton: _idx == 5
+          ? null
+          : FloatingActionButton(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+              onPressed: () => showTxnForm(context),
+              child: const Icon(Icons.add),
+            ),
     );
   }
 }
