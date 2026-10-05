@@ -29,3 +29,10 @@ build/
 # ===== 本地工作区 / 版本备份（不入库）=====
 .workbuddy/
 versions/
+
+# ===== 本地生成物 / 演示导出（不入库）=====
+演示/
+app/tool/report-sample.html
+app/tool/splash_frames.png
+app/tool/splash_preview.gif
+app/stats_preview.html

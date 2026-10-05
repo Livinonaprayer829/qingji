@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../csv_export.dart';
+import '../exporters.dart';
 import '../models.dart';
 import '../providers.dart';
 import '../repository.dart';
@@ -10,6 +10,7 @@ import '../repository.dart';
 /// - 预设:本周 / 本月 / 本季度 / 本年 / 全部
 /// - 日历上可**任意多选**日期(可跨月、可跳选,如只选 1、3、7 号)
 /// - 实时显示所选日期的 收入 / 支出 / 结余 / 笔数
+/// - 两种格式:**CSV 数据表**(含末尾汇总) / **HTML 报告**(含饼图)
 class ExportScreen extends ConsumerStatefulWidget {
   const ExportScreen({super.key});
   @override
@@ -23,6 +24,8 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
   late DateTime _month;
   /// 当前命中的预设下标,-1 表示自定义
   int _preset = -1;
+  /// 导出格式:0=CSV,1=HTML 报告
+  int _format = 0;
 
   static const _presetLabels = ['本周', '本月', '本季度', '本年', '全部'];
   static const _weekdays = ['一', '二', '三', '四', '五', '六', '日'];
@@ -36,25 +39,34 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
   // ---------------- 预设 ----------------
   void _applyPreset(int idx, List<Txn> txns) {
+    // 再次点击同一个预设 = 取消选择
+    if (_preset == idx) {
+      setState(() {
+        _selected.clear();
+        _preset = -1;
+      });
+      return;
+    }
+
     final now = DateTime.now();
     DateTime s, e;
     switch (idx) {
-      case 0: // 本周（周一 ~ 周日）
+      case 0: // 本周（周一 ~ 周日,以系统当天为准）
         s = DateTime(now.year, now.month, now.day - (now.weekday - 1));
         e = DateTime(s.year, s.month, s.day + 6);
         break;
-      case 1: // 本月
-        s = DateTime(now.year, now.month, 1);
-        e = DateTime(now.year, now.month + 1, 0);
+      case 1: // 本月：以**日历当前展示的月份**为准
+        s = DateTime(_month.year, _month.month, 1);
+        e = DateTime(_month.year, _month.month + 1, 0);
         break;
-      case 2: // 本季度
-        final q = (now.month - 1) ~/ 3;
-        s = DateTime(now.year, q * 3 + 1, 1);
-        e = DateTime(now.year, q * 3 + 4, 0);
+      case 2: // 本季度：以**日历当前展示月份**所在季度为准
+        final q = (_month.month - 1) ~/ 3;
+        s = DateTime(_month.year, q * 3 + 1, 1);
+        e = DateTime(_month.year, q * 3 + 4, 0);
         break;
-      case 3: // 本年
-        s = DateTime(now.year, 1, 1);
-        e = DateTime(now.year, 12, 31);
+      case 3: // 本年：以**日历当前展示的年份**为准,选满整年
+        s = DateTime(_month.year, 1, 1);
+        e = DateTime(_month.year, 12, 31);
         break;
       default: // 全部
         if (txns.isEmpty) return;
@@ -192,6 +204,11 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
               );
             }).toList(),
           ),
+          const SizedBox(height: 8),
+          Text(
+            '本月 / 本季度 / 本年 以日历上显示的月份为准;再次点击已选中的预设可取消',
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+          ),
           const SizedBox(height: 16),
 
           // ---- 汇总 ----
@@ -306,6 +323,36 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
           ),
           const SizedBox(height: 18),
 
+          // ---- 导出格式 ----
+          const Text('导出格式',
+              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+          const SizedBox(height: 8),
+          SegmentedButton<int>(
+            segments: const [
+              ButtonSegment(
+                value: 0,
+                label: Text('CSV 数据表'),
+                icon: Icon(Icons.table_chart_outlined, size: 18),
+              ),
+              ButtonSegment(
+                value: 1,
+                label: Text('HTML 报告'),
+                icon: Icon(Icons.pie_chart_outline, size: 18),
+              ),
+            ],
+            selected: {_format},
+            onSelectionChanged: (s) => setState(() => _format = s.first),
+            showSelectedIcon: false,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _format == 0
+                ? '数据表（日期/类型/分类/账户/金额/备注）,末尾附 收入/支出/结余/笔数 汇总;可用 Excel 打开'
+                : '含 收入/支出/结余 汇总 + 支出分类饼图 + 交易明细;浏览器打开即可,可打印或另存为 PDF',
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 16),
+
           // ---- 操作 ----
           Row(
             children: [
@@ -322,21 +369,15 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
               const SizedBox(width: 12),
               Expanded(
                 child: FilledButton.icon(
-                  onPressed: selectedTxns.isEmpty && _selected.isEmpty
-                      ? null
-                      : () => _export(data, selectedTxns),
+                  onPressed:
+                      selectedTxns.isEmpty ? null : () => _export(data, selectedTxns),
                   icon: const Icon(Icons.download),
                   label: Text(selectedTxns.isEmpty
                       ? '所选日期无记录'
-                      : '导出 ${selectedTxns.length} 笔为 CSV'),
+                      : '导出 ${selectedTxns.length} 笔'),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 10),
-          Center(
-            child: Text('导出内容:日期 / 类型 / 分类 / 账户 / 金额 / 备注',
-                style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
           ),
           const SizedBox(height: 20),
         ],
@@ -409,6 +450,13 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
 
   Future<void> _export(AppData data, List<Txn> txns) async {
     final sorted = [...txns]..sort((a, b) => a.date.compareTo(b.date));
-    await exportCsv(context, data, sorted, fileStem: _fileStem);
+    if (_format == 0) {
+      await exportCsv(context, data, sorted, fileStem: _fileStem);
+    } else {
+      await exportHtmlReport(context, data, sorted,
+          rangeText: _rangeText,
+          selectedDays: _selected.length,
+          fileStem: _fileStem);
+    }
   }
 }
