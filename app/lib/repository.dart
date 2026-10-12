@@ -304,12 +304,15 @@ class DataRepository {
       ];
 
   /// 内置标准账户集(固定 uuid,跨设备/调用一致)
-  /// 现金 / 银行卡 / 支付宝 / 微信
+  /// 现金 / 银行卡 / 支付宝 / 微信,外加支付宝的两个支付渠道
+  /// (支付宝-余额 / 支付宝-花呗,由「支付宝」二级选择写入)
   static List<Account> builtInAccounts() => [
         Account(id: 'c1111111-1111-4111-8111-111111111111', name: '现金', currency: '¥'),
         Account(id: 'c2222222-2222-4222-8222-222222222222', name: '银行卡', currency: '¥'),
-        Account(id: 'c3333333-3333-4333-8333-333333333333', name: '支付宝', currency: '¥'),
+        Account(id: AlipayAccounts.parentId, name: AlipayAccounts.parentName, currency: '¥'),
         Account(id: 'c4444444-4444-4444-8444-444444444444', name: '微信', currency: '¥'),
+        Account(id: AlipayAccounts.balanceId, name: AlipayAccounts.balanceName, currency: '¥'),
+        Account(id: AlipayAccounts.huabeiId, name: AlipayAccounts.huabeiName, currency: '¥'),
       ];
 
   Future<void> pushAccounts(List<Account> list) async {

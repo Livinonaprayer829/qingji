@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -179,6 +181,14 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
 
     final barW = _mode == StatsMode.month ? 8.0 : 16.0;
     final barGs = _mode == StatsMode.month ? 2.0 : 4.0;
+
+    // 柱顶金额标注:周/年横排;「月」柱子太密,改为竖排(旋转 90°)避免互相压字
+    final labelSize = _mode == StatsMode.week ? 10.0 : 9.0;
+    final labelRotate = _mode == StatsMode.month ? -math.pi / 2 : 0.0;
+
+    final barValues = buckets.map(sumFor).toList();
+    final maxBar = barValues.isEmpty ? 0.0 : barValues.reduce(math.max);
+
     final barGroups = buckets.asMap().entries.map((e) {
       final v = sumFor(e.value);
       return BarChartGroupData(
@@ -191,6 +201,8 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
           ),
         ],
+        // 顶部常显金额(金额为 0 的不显示,避免噪声)
+        showingTooltipIndicators: v > 0 ? const [0] : const [],
       );
     }).toList();
 
@@ -469,6 +481,25 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             BarChartData(
               barGroups: barGroups,
               groupsSpace: barGs,
+              // 顶部留出空间给金额标注,避免贴着图表上沿
+              maxY: maxBar <= 0 ? 100 : maxBar * 1.3,
+              barTouchData: BarTouchData(
+                touchTooltipData: BarTouchTooltipData(
+                  getTooltipColor: (group) => Colors.transparent,
+                  tooltipPadding: EdgeInsets.zero,
+                  tooltipMargin: 2,
+                  rotateAngle: labelRotate,
+                  fitInsideHorizontally: true,
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) =>
+                      BarTooltipItem(
+                    shortMoney(rod.toY),
+                    TextStyle(
+                        fontSize: labelSize,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade800),
+                  ),
+                ),
+              ),
               borderData: FlBorderData(show: false),
               gridData: FlGridData(show: false),
               titlesData: FlTitlesData(

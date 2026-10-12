@@ -55,7 +55,8 @@ class _LoanFormState extends ConsumerState<LoanForm> {
     final e = widget.editing;
     _type = widget.initialType ?? e?.type ?? LoanType.borrowOut;
     _personCtl.text = e?.person ?? '';
-    _amountCtl.text = e?.amount.toString() ?? '';
+    // 固定两位小数,避免 120.4500000000001 这类浮点噪声回填到输入框
+    _amountCtl.text = e?.amount.toStringAsFixed(2) ?? '';
     _noteCtl.text = e?.note ?? '';
     _date = e?.date ?? DateTime.now();
     _dueDate = e?.dueDate;

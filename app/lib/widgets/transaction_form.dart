@@ -68,6 +68,98 @@ class _TxnFormState extends ConsumerState<TxnForm> {
   List<Category> get _cats =>
       ref.read(appDataProvider).categories.where((c) => c.type == _type).toList();
 
+  /// 下拉里展示的账户:隐藏支付宝的两个子渠道(它们由「支付宝」二级选择进入);
+  /// 但当前选中的若是子渠道,则补进列表,保证 Dropdown 的 value 能匹配到项。
+  List<DropdownMenuItem<String>> _dropdownItems(List<Account> all) {
+    final list = all.where((a) => !AlipayAccounts.isChannel(a.id)).toList();
+    for (final a in all) {
+      if (a.id == _accountId && !list.any((x) => x.id == a.id)) {
+        list.add(a);
+      }
+    }
+    return list
+        .map((a) => DropdownMenuItem(
+              value: a.id,
+              child: Text(a.name, overflow: TextOverflow.ellipsis),
+            ))
+        .toList();
+  }
+
+  /// 选中「支付宝」时先弹二级渠道选择;其他账户直接切换。
+  Future<void> _onAccountChanged(String? v) async {
+    if (v == null) return;
+    if (v != AlipayAccounts.parentId) {
+      setState(() => _accountId = v);
+      return;
+    }
+    final picked = await _pickAlipayChannel();
+    if (picked != null && mounted) {
+      setState(() => _accountId = picked);
+    }
+  }
+
+  /// 二级选项:支付宝余额 / 花呗。返回选中的账户 id,取消则返回 null。
+  Future<String?> _pickAlipayChannel() async {
+    final accounts = ref.read(appDataProvider).accounts;
+    String? idOf(String name) {
+      for (final a in accounts) {
+        if (a.name == name) return a.id;
+      }
+      return null;
+    }
+
+    final balanceId = idOf(AlipayAccounts.balanceName);
+    final huabeiId = idOf(AlipayAccounts.huabeiName);
+    if (balanceId == null && huabeiId == null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('账户数据未就绪,请稍后再试')));
+      return null;
+    }
+
+    final primary = Theme.of(context).colorScheme.primary;
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 16),
+            const Text('支付宝 · 选择支付渠道',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            const SizedBox(height: 6),
+            Text('选完后账户记为「支付宝-余额 / 支付宝-花呗」',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            const SizedBox(height: 8),
+            if (balanceId != null)
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: primary.withOpacity(0.12),
+                  child: const Text('💳', style: TextStyle(fontSize: 18)),
+                ),
+                title: const Text('余额'),
+                subtitle: const Text('支付宝余额支付'),
+                onTap: () => Navigator.of(ctx).pop(balanceId),
+              ),
+            if (huabeiId != null)
+              ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: primary.withOpacity(0.12),
+                  child: const Text('🧾', style: TextStyle(fontSize: 18)),
+                ),
+                title: const Text('花呗'),
+                subtitle: const Text('先用后付'),
+                onTap: () => Navigator.of(ctx).pop(huabeiId),
+              ),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
   void _save() {
     final amt = double.tryParse(_amountCtl.text);
     if (amt == null || amt <= 0) {
@@ -157,12 +249,11 @@ class _TxnFormState extends ConsumerState<TxnForm> {
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
             value: _accountId,
+            isExpanded: true,
             decoration: const InputDecoration(
                 labelText: '账户', border: OutlineInputBorder()),
-            items: accounts
-                .map((a) => DropdownMenuItem(value: a.id, child: Text(a.name)))
-                .toList(),
-            onChanged: (v) => setState(() => _accountId = v),
+            items: _dropdownItems(accounts),
+            onChanged: _onAccountChanged,
           ),
           const SizedBox(height: 16),
           InkWell(
