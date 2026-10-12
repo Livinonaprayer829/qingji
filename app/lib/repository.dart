@@ -304,15 +304,15 @@ class DataRepository {
       ];
 
   /// 内置标准账户集(固定 uuid,跨设备/调用一致)
-  /// 现金 / 银行卡 / 支付宝 / 微信,外加支付宝的两个支付渠道
-  /// (支付宝-余额 / 支付宝-花呗,由「支付宝」二级选择写入)
+  /// 现金 / 银行卡 / 支付宝 / 支付宝（余额）/ 支付宝（花呗）/ 微信
+  /// 两个支付宝渠道直接作为账户出现在下拉里,不再走二级弹窗。
   static List<Account> builtInAccounts() => [
         Account(id: 'c1111111-1111-4111-8111-111111111111', name: '现金', currency: '¥'),
         Account(id: 'c2222222-2222-4222-8222-222222222222', name: '银行卡', currency: '¥'),
         Account(id: AlipayAccounts.parentId, name: AlipayAccounts.parentName, currency: '¥'),
-        Account(id: 'c4444444-4444-4444-8444-444444444444', name: '微信', currency: '¥'),
         Account(id: AlipayAccounts.balanceId, name: AlipayAccounts.balanceName, currency: '¥'),
         Account(id: AlipayAccounts.huabeiId, name: AlipayAccounts.huabeiName, currency: '¥'),
+        Account(id: 'c4444444-4444-4444-8444-444444444444', name: '微信', currency: '¥'),
       ];
 
   Future<void> pushAccounts(List<Account> list) async {
@@ -365,6 +365,21 @@ class DataRepository {
     }
     if (removedIds.isNotEmpty) {
       accs = accs.where((a) => !removedIds.contains(a.id)).toList();
+    }
+
+    // 内置账户以 id 为准同步名称(例如改过名的 支付宝-余额 → 支付宝（余额）)。
+    // 必须放在下面「按名补齐」之前,否则同一 id 会因改名被再补一条出来。
+    for (final b in builtIns) {
+      final i = accs.indexWhere((a) => a.id == b.id);
+      if (i >= 0 && accs[i].name != b.name) {
+        accs[i] = Account(
+          id: b.id,
+          name: b.name,
+          currency: accs[i].currency,
+          updatedAt: DateTime.now(),
+        );
+        changed = true;
+      }
     }
 
     final existing = {for (final a in accs) a.name};

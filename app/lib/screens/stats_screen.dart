@@ -182,9 +182,9 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     final barW = _mode == StatsMode.month ? 8.0 : 16.0;
     final barGs = _mode == StatsMode.month ? 2.0 : 4.0;
 
-    // 柱顶金额标注:周/年横排;「月」柱子太密,改为竖排(旋转 90°)避免互相压字
-    final labelSize = _mode == StatsMode.week ? 10.0 : 9.0;
-    final labelRotate = _mode == StatsMode.month ? -math.pi / 2 : 0.0;
+    // 柱顶金额标注字号(月视图改为横向滚动,不再需要竖排小字)
+    final labelSize =
+        _mode == StatsMode.week ? 10.0 : (_mode == StatsMode.year ? 8.5 : 9.0);
 
     final barValues = buckets.map(sumFor).toList();
     final maxBar = barValues.isEmpty ? 0.0 : barValues.reduce(math.max);
@@ -211,6 +211,73 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         : _mode == StatsMode.month
             ? '每日支出'
             : '每日支出';
+
+    // 柱状图:柱子顶部常显金额
+    final barChart = BarChart(
+      BarChartData(
+        barGroups: barGroups,
+        groupsSpace: barGs,
+        // 顶部留出空间给金额标注,避免贴着图表上沿
+        maxY: maxBar <= 0 ? 100 : maxBar * 1.3,
+        barTouchData: BarTouchData(
+          // 月视图靠横向滚动查看,关掉触摸以免点击时多叠一层标签
+          enabled: _mode != StatsMode.month,
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (group) => Colors.transparent,
+            tooltipPadding: EdgeInsets.zero,
+            tooltipMargin: 2,
+            fitInsideHorizontally: true,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
+              shortMoney(rod.toY),
+              TextStyle(
+                  fontSize: labelSize,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.grey.shade800),
+            ),
+          ),
+        ),
+        borderData: FlBorderData(show: false),
+        gridData: FlGridData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          topTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles:
+              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              getTitlesWidget: (v, meta) {
+                final idx = v.toInt();
+                if (idx < 0 || idx >= buckets.length) {
+                  return const SizedBox();
+                }
+                final b = buckets[idx];
+                if (_mode == StatsMode.week) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_weekdayLabels[(b.weekday - 1) % 7],
+                          style: const TextStyle(fontSize: 10)),
+                      Text('${b.month}/${b.day}',
+                          style:
+                              const TextStyle(fontSize: 8, color: Colors.grey)),
+                    ],
+                  );
+                }
+                // 月视图柱距已放宽,每天都标出日期
+                if (_mode == StatsMode.month) {
+                  return Text('${b.day}', style: const TextStyle(fontSize: 9));
+                }
+                return Text('${b.month}月',
+                    style: const TextStyle(fontSize: 10));
+              },
+            ),
+          ),
+        ),
+      ),
+    );
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -475,77 +542,32 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
         Text(barTitle,
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 200,
-          child: BarChart(
-            BarChartData(
-              barGroups: barGroups,
-              groupsSpace: barGs,
-              // 顶部留出空间给金额标注,避免贴着图表上沿
-              maxY: maxBar <= 0 ? 100 : maxBar * 1.3,
-              barTouchData: BarTouchData(
-                touchTooltipData: BarTouchTooltipData(
-                  getTooltipColor: (group) => Colors.transparent,
-                  tooltipPadding: EdgeInsets.zero,
-                  tooltipMargin: 2,
-                  rotateAngle: labelRotate,
-                  fitInsideHorizontally: true,
-                  getTooltipItem: (group, groupIndex, rod, rodIndex) =>
-                      BarTooltipItem(
-                    shortMoney(rod.toY),
-                    TextStyle(
-                        fontSize: labelSize,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.grey.shade800),
+        // 「月」柱子多(28~31 根),横向可滚动并给足柱距,保证顶部金额不互相压字;
+        // 周/年柱子少,直接铺满宽度。
+        if (_mode == StatsMode.month)
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 200,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: buckets.length * 34.0 + 28,
+                    child: barChart,
                   ),
                 ),
               ),
-              borderData: FlBorderData(show: false),
-              gridData: FlGridData(show: false),
-              titlesData: FlTitlesData(
-                leftTitles:
-                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                topTitles:
-                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles:
-                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    getTitlesWidget: (v, meta) {
-                      final idx = v.toInt();
-                      if (idx < 0 || idx >= buckets.length) {
-                        return const SizedBox();
-                      }
-                      final b = buckets[idx];
-                      if (_mode == StatsMode.week) {
-                        return Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(_weekdayLabels[(b.weekday - 1) % 7],
-                                style: const TextStyle(fontSize: 10)),
-                            Text('${b.month}/${b.day}',
-                                style: const TextStyle(
-                                    fontSize: 8, color: Colors.grey)),
-                          ],
-                        );
-                      }
-                      if (_mode == StatsMode.month) {
-                        final d = b.day;
-                        if (d % 5 == 0 || d == buckets.length) {
-                          return Text('$d', style: const TextStyle(fontSize: 10));
-                        }
-                        return const SizedBox();
-                      }
-                      return Text('${b.month}月',
-                          style: const TextStyle(fontSize: 10));
-                    },
-                  ),
-                ),
+              const SizedBox(height: 6),
+              Center(
+                child: Text('← 左右滑动查看每天的支出 →',
+                    style:
+                        TextStyle(fontSize: 11, color: Colors.grey.shade600)),
               ),
-            ),
-          ),
-        ),
+            ],
+          )
+        else
+          SizedBox(height: 200, child: barChart),
       ],
     );
   }

@@ -3,17 +3,18 @@ import 'package:uuid/uuid.dart';
 final _uuid = Uuid();
 
 /// 内置账户「支付宝」及其两个支付渠道。
-/// 渠道作为**独立账户**存在,这样统计/导出/云端都能区分「支付宝-余额 / 支付宝-花呗」;
+/// 渠道作为**独立账户**存在(直接出现在账户下拉里,不做二级弹窗),
+/// 这样统计/导出/云端都能区分「支付宝（余额） / 支付宝（花呗）」;
 /// 均使用固定 UUID(内置账户不上云,避免多用户固定 id 冲突)。
 class AlipayAccounts {
   static const parentId = 'c3333333-3333-4333-8333-333333333333';
   static const parentName = '支付宝';
 
   static const balanceId = 'c5555555-5555-4555-8555-555555555555';
-  static const balanceName = '支付宝-余额';
+  static const balanceName = '支付宝（余额）';
 
   static const huabeiId = 'c6666666-6666-4666-8666-666666666666';
-  static const huabeiName = '支付宝-花呗';
+  static const huabeiName = '支付宝（花呗）';
 
   /// 是否为支付宝的子渠道账户
   static bool isChannel(String id) => id == balanceId || id == huabeiId;
