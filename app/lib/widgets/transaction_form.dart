@@ -54,6 +54,11 @@ class _TxnFormState extends ConsumerState<TxnForm> {
           ? data.categories.first.id
           : data.categories.firstWhere((c) => c.type == TxType.expense).id;
       _accountId = data.accounts.isNotEmpty ? data.accounts.first.id : null;
+      // 预填全局默认账户;未设置(或该账户已不存在)时沿用原逻辑:取第一个账户
+      final def = ref.read(defaultAccountProvider);
+      if (def != null && data.accounts.any((a) => a.id == def)) {
+        _accountId = def;
+      }
       _date = widget.initialDate ?? DateTime.now();
     }
   }

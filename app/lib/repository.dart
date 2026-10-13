@@ -64,6 +64,23 @@ class DataRepository {
   /// 借还表可能尚未在 Supabase 创建,此前错误被静默吞掉,用户无从排查。
   String? lastLoansError;
 
+  // ---------------- 全局默认记账账户(本地偏好,不参与云同步) ----------------
+  static const _keyDefaultAccount = 'default_account_id';
+
+  Future<String?> loadDefaultAccountId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyDefaultAccount);
+  }
+
+  Future<void> saveDefaultAccountId(String? id) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (id == null) {
+      await prefs.remove(_keyDefaultAccount);
+    } else {
+      await prefs.setString(_keyDefaultAccount, id);
+    }
+  }
+
   // ---------------- 本地缓存 ----------------
   Future<AppData> loadLocal() async {
     final prefs = await SharedPreferences.getInstance();

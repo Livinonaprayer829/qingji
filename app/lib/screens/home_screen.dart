@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models.dart';
 import '../providers.dart';
+import '../widgets/swipe_delete.dart';
 import '../widgets/txn_tile.dart';
 import '../widgets/transaction_form.dart';
 
@@ -81,18 +82,22 @@ class HomeScreen extends ConsumerWidget {
         else
           Card(
             child: Column(
-              children: recentTop
-                  .map((t) => Column(
-                        children: [
-                          TxnTile(
-                            txn: t,
-                            onTap: () => showTxnForm(context, editing: t),
-                          ),
-                          if (t != recentTop.last)
-                            const Divider(height: 1, indent: 72),
-                        ],
-                      ))
-                  .toList(),
+              children: [
+                for (var i = 0; i < recentTop.length; i++) ...[
+                  if (i > 0) const Divider(height: 1, indent: 72),
+                  SwipeDelete(
+                    key: ValueKey('home_${recentTop[i].id}'),
+                    message: '删除这笔记录？',
+                    onDelete: () => ref
+                        .read(appDataProvider.notifier)
+                        .deleteTx(recentTop[i].id),
+                    child: TxnTile(
+                      txn: recentTop[i],
+                      onTap: () => showTxnForm(context, editing: recentTop[i]),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
       ],

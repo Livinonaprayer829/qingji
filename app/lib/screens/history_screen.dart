@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers.dart';
 import '../models.dart';
+import '../widgets/swipe_delete.dart';
 import '../widgets/txn_tile.dart';
 import '../widgets/transaction_form.dart';
 
@@ -52,33 +53,12 @@ class HistoryScreen extends ConsumerWidget {
             Card(
               child: Column(
                 children: list
-                    .map((t) => Dismissible(
-                          key: Key(t.id),
-                          direction: DismissDirection.endToStart,
-                          background: Container(
-                            color: Colors.red,
-                            alignment: Alignment.centerRight,
-                            padding: const EdgeInsets.only(right: 16),
-                            child: const Icon(Icons.delete, color: Colors.white),
-                          ),
-                          confirmDismiss: (_) async {
-                            return await showDialog(
-                              context: context,
-                              builder: (c) => AlertDialog(
-                                title: const Text('删除这笔记录？'),
-                                actions: [
-                                  TextButton(
-                                      onPressed: () => Navigator.of(c).pop(false),
-                                      child: const Text('取消')),
-                                  TextButton(
-                                      onPressed: () => Navigator.of(c).pop(true),
-                                      child: const Text('删除')),
-                                ],
-                              ),
-                            );
-                          },
-                          onDismissed: (_) =>
-                              ref.read(appDataProvider.notifier).deleteTx(t.id),
+                    .map((t) => SwipeDelete(
+                          key: ValueKey('hist_${t.id}'),
+                          message: '删除这笔记录？',
+                          onDelete: () => ref
+                              .read(appDataProvider.notifier)
+                              .deleteTx(t.id),
                           child: TxnTile(
                             txn: t,
                             onTap: () => showTxnForm(context, editing: t),

@@ -13,6 +13,31 @@ final offlineModeProvider = StateProvider<bool>((ref) => false);
 final appDataProvider =
     NotifierProvider<AppDataNotifier, AppData>(AppDataNotifier.new);
 
+/// 全局默认记账账户(本地偏好,不参与云同步)。
+/// 为空时记账页沿用原逻辑(取第一个账户)。
+final defaultAccountProvider =
+    NotifierProvider<DefaultAccountNotifier, String?>(
+        DefaultAccountNotifier.new);
+
+class DefaultAccountNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    _load();
+    return null;
+  }
+
+  Future<void> _load() async {
+    final id = await ref.read(repositoryProvider).loadDefaultAccountId();
+    if (id != null) state = id;
+  }
+
+  /// 设为默认账户;传 null 表示取消默认
+  Future<void> setAccount(String? id) async {
+    state = id;
+    await ref.read(repositoryProvider).saveDefaultAccountId(id);
+  }
+}
+
 class AppDataNotifier extends Notifier<AppData> {
   late final DataRepository _repo;
   bool _syncing = false;

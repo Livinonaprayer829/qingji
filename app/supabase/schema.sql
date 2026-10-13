@@ -139,3 +139,4 @@ begin
     execute format('alter table public.transactions drop constraint if exists %I', rec.constraint_name);
   end loop;
 end $$;
+

@@ -91,9 +91,10 @@ class _DakaAppState extends State<DakaApp> {
               label: '借还'),
         ],
       ),
-      // 借还页(下标5)由 LoanScreen 自己提供 FAB(需要带上当前筛选的借出/借入类型),
-      // 这里不再重复提供,否则外层的 FAB 会盖住它、导致弹窗拿不到 tab 状态。
-      floatingActionButton: _idx == 5
+      // 只在需要记账的页面显示 FAB:概览(0)/账单(1)/日历(2)。
+      // 统计(3)与我的(4)不需要记一笔;借还(5)由 LoanScreen 自己提供
+      // (它要带上当前筛选的借出/借入类型),这里都不能再给。
+      floatingActionButton: _idx > 2
           ? null
           : FloatingActionButton(
               backgroundColor: Theme.of(context).colorScheme.primary,
