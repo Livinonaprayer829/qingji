@@ -198,8 +198,17 @@ class _AuthScreenState extends State<AuthScreen> {
                   builder: (context, ref, _) => TextButton(
                     onPressed: _loading
                         ? null
-                        : () => ref.read(offlineModeProvider.notifier).state =
-                            true,
+                        : () {
+                            ref.read(offlineModeProvider.notifier).state =
+                                true;
+                            // 关键:本页可能是从「数据同步」页 push 进来的。
+                            // 那种情况下离线标记**本来就是 true**,再设一次不会触发任何刷新
+                            // (Riverpod 值不变就不通知) → 页面看起来"点了没反应"。
+                            // 所以这里主动返回上一页;若是 AuthGate 的首页(无处可退),
+                            // 则由上面那次状态变更让 gate 切到主页。
+                            final nav = Navigator.of(context);
+                            if (nav.canPop()) nav.pop();
+                          },
                     child: Text('先用离线模式(跳过登录)',
                         style: TextStyle(color: primary)),
                   ),

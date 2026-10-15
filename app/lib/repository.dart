@@ -128,7 +128,13 @@ class DataRepository {
   /// 3. 同步替换交易中的 accountId / categoryId 外键。
   /// 4. 将迁移后的数据写回本地。
   Future<AppData> migrateIdsToUuid(AppData data) async {
-    final builtInAccMap = {for (final a in builtInAccounts()) a.name: a.id};
+    // 名称 → 内置 id。除当前内置名外还包含**改名前的旧名**,
+    // 这样老数据/云端里叫「支付宝-余额」的账户也会被归一成内置 id,
+    // 不会和新的「支付宝（余额）」并存成两条、也不会留下对不上的 id。
+    final builtInAccMap = {
+      for (final a in builtInAccounts()) a.name: a.id,
+      ..._accountNameAliases,
+    };
     final builtInCatMap = {for (final c in builtInCategories()) c.name: c.id};
 
     final accMap = <String, String>{};
@@ -320,6 +326,12 @@ class DataRepository {
         Category(id: 'b4444444-4444-4444-8444-444444444444', name: '生活费', icon: '💴', type: TxType.income),
       ];
 
+  /// 内置账户的**旧名称** → 固定 id(改名/早期版本可能残留,老数据和云端里会遇到)
+  static const _accountNameAliases = <String, String>{
+    '支付宝-余额': AlipayAccounts.balanceId,
+    '支付宝-花呗': AlipayAccounts.huabeiId,
+  };
+
   /// 内置标准账户集(固定 uuid,跨设备/调用一致)
   /// 现金 / 银行卡 / 支付宝 / 支付宝（余额）/ 支付宝（花呗）/ 微信
   /// 两个支付宝渠道直接作为账户出现在下拉里,不再走二级弹窗。
@@ -358,6 +370,29 @@ class DataRepository {
     var txns = List<Txn>.from(local.transactions);
     final changedTxns = <Txn>[];
     var changed = false;
+
+    // 0) 先按 **id** 去重:账户改名前后各留一条时,归一后 id 会相同,
+    //    此时直接丢掉多余的一条(同 id 所以不用改交易的 accountId)。
+    final byId = <String, Account>{};
+    var dupById = false;
+    for (final a in accs) {
+      final prev = byId[a.id];
+      if (prev == null) {
+        byId[a.id] = a;
+        continue;
+      }
+      dupById = true;
+      // 两条里优先保留"名称等于内置名"的那条(即改名后的新名)
+      String? builtInName;
+      for (final b in builtIns) {
+        if (b.id == a.id) builtInName = b.name;
+      }
+      if (builtInName != null && prev.name != builtInName) byId[a.id] = a;
+    }
+    if (dupById) {
+      accs = byId.values.toList();
+      changed = true;
+    }
 
     final groups = <String, List<Account>>{};
     for (final a in accs) groups.putIfAbsent(a.name, () => []).add(a);

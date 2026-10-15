@@ -78,23 +78,35 @@ class AppDataNotifier extends Notifier<AppData> {
     ref.read(offlineModeProvider.notifier).state = false;
   }
 
-  /// 登录后从云端拉取;新用户云端为空则 seed 并上传
+  /// 登录后从云端拉取;新用户云端为空则 seed 并上传。
+  ///
+  /// 关键:所有"补齐内置账户/分类 + 旧 id 归一"都必须**在赋值给 state 之前**做完。
+  /// 之前是 `state = cloud;` 再补内置账户——而内置账户(支付宝-余额/花呗等)不在云端,
+  /// 于是存在一个**短暂的空窗**:列表里这些账户会突然消失。如果这时正好打开它们的
+  /// 账户详情页,就会渲染出"该账户已不存在"(返回再进又好了)。
+  /// 现在合并成一次赋值,中间态不再暴露给 UI。
   Future<void> _syncFromCloud() async {
     if (_syncing) return;
     _syncing = true;
     try {
       final cloud = await _repo.fetchCloud();
       if (cloud == null) return;
+
+      AppData merged;
       if (cloud.isEmpty) {
-        if (state.isEmpty) state = _repo.seed();
-        await _repo.pushAll(state);
-        final refreshed = await _repo.fetchCloud();
-        if (refreshed != null) state = refreshed;
+        merged = state.isEmpty ? _repo.seed() : state;
+        await _repo.pushAll(merged);
+        merged = await _repo.fetchCloud() ?? merged;
       } else {
-        state = cloud;
+        merged = cloud;
       }
-      state = await _repo.ensureBuiltInAccounts(state);
-      state = await _repo.ensureBuiltInCategories(state);
+
+      // 归一(旧 id/旧名)→ 补齐内置账户、内置分类
+      merged = await _repo.migrateIdsToUuid(merged);
+      merged = await _repo.ensureBuiltInAccounts(merged);
+      merged = await _repo.ensureBuiltInCategories(merged);
+
+      state = merged; // 唯一一次赋值
       await _repo.saveLocal(state);
     } finally {
       _syncing = false;
