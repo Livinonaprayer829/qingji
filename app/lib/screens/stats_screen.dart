@@ -1,11 +1,10 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:fl_chart/fl_chart.dart';
 import '../models.dart';
 import '../providers.dart';
 import '../utils.dart';
+import '../widgets/bar_trend_card.dart';
+import '../widgets/donut_chart.dart';
 
 enum StatsMode { week, month, year }
 
@@ -137,10 +136,10 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     final sortedCats = byCat.keys.toList()
       ..sort((a, b) => (byCat[b] ?? 0).compareTo(byCat[a] ?? 0));
 
-    double sumFor(DateTime b) {
+    double sumFor(DateTime b, {bool expense = true}) {
       double s = 0;
       for (final t in periodTxns) {
-        if (!t.type.isExpense) continue;
+        if (t.type.isExpense != expense) continue;
         if (t.date.year != b.year || t.date.month != b.month) continue;
         if (_mode == StatsMode.year) {
           s += t.amount;
@@ -151,133 +150,51 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       return s;
     }
 
-    final colors = [
-      Colors.blue,
-      Colors.orange,
-      Colors.green,
-      Colors.purple,
-      Colors.red,
-      Colors.teal,
-      Colors.amber,
-      Colors.pink
-    ];
     final catKeys = sortedCats;
-    final sections = catKeys.asMap().entries.map((e) {
-      final key = e.value;
-      final v = byCat[key]!;
-      final pct = totalExp > 0 ? (v / totalExp * 100) : 0;
-      final isSel = _selectedCat == key;
-      return PieChartSectionData(
-        value: v,
-        title: '${pct.toStringAsFixed(0)}%',
-        color: colors[e.key % colors.length],
-        radius: isSel ? 84 : 70,
-        titleStyle: TextStyle(
-            color: Colors.white,
-            fontSize: isSel ? 13 : 12,
-            fontWeight: FontWeight.bold),
+    // 环形图数据（颜色按金额从大到小依次取 palette）
+    final donutSlices = [
+      for (var i = 0; i < catKeys.length; i++)
+        DonutSlice(
+          label: findCategory(data.categories, catKeys[i])?.name ?? '未知',
+          value: byCat[catKeys[i]]!,
+          color: chartPalette[i % chartPalette.length],
+        ),
+    ];
+
+    // 柱状趋势数据：横轴按时间顺序，纵轴金额；浮窗显示日期与收支
+    final barItems = buckets.map((b) {
+      String axis;
+      bool showAxis;
+      String tip;
+      if (_mode == StatsMode.week) {
+        axis = _weekdayLabels[(b.weekday - 1) % 7];
+        showAxis = true;
+        tip = '${b.month}月${b.day}日';
+      } else if (_mode == StatsMode.month) {
+        axis = '${b.day}';
+        showAxis = b.day % 5 == 0; // 只标 5 的倍数，避免挤
+        tip = '${b.month}月${b.day}日';
+      } else {
+        axis = '${b.month}';
+        showAxis = true;
+        tip = '${b.year}年${b.month}月';
+      }
+      return BarTrendItem(
+        axisLabel: axis,
+        showAxisLabel: showAxis,
+        tooltipTitle: tip,
+        expense: sumFor(b),
+        income: sumFor(b, expense: false),
       );
     }).toList();
 
-    final barW = _mode == StatsMode.month ? 8.0 : 16.0;
-    final barGs = _mode == StatsMode.month ? 2.0 : 4.0;
+    // 平均值的分母:当前期间还没过完时只算"已经过去的格子",
+    // 否则本月后面那些空白天数会把日均摊薄(实测 25 号却按 31 天算,偏低)。
+    final nowDate = DateTime.now();
+    final todayStart = DateTime(nowDate.year, nowDate.month, nowDate.day);
+    final elapsedBuckets = buckets.where((b) => !b.isAfter(todayStart)).length;
+    final avgDivisor = elapsedBuckets > 0 ? elapsedBuckets : buckets.length;
 
-    // 柱顶金额标注字号(月视图改为横向滚动,不再需要竖排小字)
-    final labelSize =
-        _mode == StatsMode.week ? 10.0 : (_mode == StatsMode.year ? 8.5 : 9.0);
-
-    final barValues = buckets.map(sumFor).toList();
-    final maxBar = barValues.isEmpty ? 0.0 : barValues.reduce(math.max);
-
-    final barGroups = buckets.asMap().entries.map((e) {
-      final v = sumFor(e.value);
-      return BarChartGroupData(
-        x: e.key,
-        barRods: [
-          BarChartRodData(
-            toY: v,
-            width: barW,
-            color: Theme.of(context).colorScheme.primary.withOpacity(0.8),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
-          ),
-        ],
-        // 顶部常显金额(金额为 0 的不显示,避免噪声)
-        showingTooltipIndicators: v > 0 ? const [0] : const [],
-      );
-    }).toList();
-
-    final barTitle = _mode == StatsMode.year
-        ? '各月支出'
-        : _mode == StatsMode.month
-            ? '每日支出'
-            : '每日支出';
-
-    // 柱状图:柱子顶部常显金额
-    final barChart = BarChart(
-      BarChartData(
-        barGroups: barGroups,
-        groupsSpace: barGs,
-        // 顶部留出空间给金额标注,避免贴着图表上沿
-        maxY: maxBar <= 0 ? 100 : maxBar * 1.3,
-        barTouchData: BarTouchData(
-          // 月视图靠横向滚动查看,关掉触摸以免点击时多叠一层标签
-          enabled: _mode != StatsMode.month,
-          touchTooltipData: BarTouchTooltipData(
-            getTooltipColor: (group) => Colors.transparent,
-            tooltipPadding: EdgeInsets.zero,
-            tooltipMargin: 2,
-            fitInsideHorizontally: true,
-            getTooltipItem: (group, groupIndex, rod, rodIndex) => BarTooltipItem(
-              shortMoney(rod.toY),
-              TextStyle(
-                  fontSize: labelSize,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.grey.shade800),
-            ),
-          ),
-        ),
-        borderData: FlBorderData(show: false),
-        gridData: FlGridData(show: false),
-        titlesData: FlTitlesData(
-          leftTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          topTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          rightTitles:
-              const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (v, meta) {
-                final idx = v.toInt();
-                if (idx < 0 || idx >= buckets.length) {
-                  return const SizedBox();
-                }
-                final b = buckets[idx];
-                if (_mode == StatsMode.week) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(_weekdayLabels[(b.weekday - 1) % 7],
-                          style: const TextStyle(fontSize: 10)),
-                      Text('${b.month}/${b.day}',
-                          style:
-                              const TextStyle(fontSize: 8, color: Colors.grey)),
-                    ],
-                  );
-                }
-                // 月视图柱距已放宽,每天都标出日期
-                if (_mode == StatsMode.month) {
-                  return Text('${b.day}', style: const TextStyle(fontSize: 9));
-                }
-                return Text('${b.month}月',
-                    style: const TextStyle(fontSize: 10));
-              },
-            ),
-          ),
-        ),
-      ),
-    );
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -405,37 +322,63 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 20),
-        const Text('支出分类占比',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-        if (sections.isNotEmpty)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 6),
-            child: Text('点击扇区查看分类明细',
-                style: TextStyle(color: Colors.grey, fontSize: 12)),
-          ),
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 220,
-          child: sections.isEmpty
-              ? const Center(child: Text('该期间暂无支出记录'))
-              : PieChart(
-                  PieChartData(
-                    sections: sections,
-                    centerSpaceRadius: 40,
-                    sectionsSpace: 2,
-                    pieTouchData: PieTouchData(
-                      touchCallback: (event, response) {
-                        if (response?.touchedSection == null) return;
-                        final idx = response!.touchedSection!.touchedSectionIndex;
-                        if (idx < 0 || idx >= catKeys.length) return;
-                        final key = catKeys[idx];
-                        setState(() =>
-                            _selectedCat = _selectedCat == key ? null : key);
-                      },
-                    ),
-                  ),
+        const SizedBox(height: 16),
+
+        // ---- 柱状趋势 ----
+        BarTrendCard(
+          title: _mode == StatsMode.year ? '各月支出趋势' : '每日支出趋势',
+          avgLabel: _mode == StatsMode.year ? '月均' : '日均',
+          maxLabel: _mode == StatsMode.year ? '单月最高' : '单日最高',
+          items: barItems,
+          avgDivisor: avgDivisor,
+        ),
+        const SizedBox(height: 16),
+
+        // ---- 支出结构(环形) ----
+        Card(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Text('支出结构',
+                        style: TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    Text('点击扇区看明细',
+                        style: TextStyle(
+                            fontSize: 11, color: Colors.grey.shade500)),
+                  ],
                 ),
+                if (catKeys.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 48),
+                    child: Center(
+                      child: Text('该期间暂无支出记录',
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.grey.shade500)),
+                    ),
+                  )
+                else
+                  DonutChart(
+                    slices: donutSlices,
+                    selectedIndex: _selectedCat == null
+                        ? null
+                        : catKeys.indexOf(_selectedCat!),
+                    onSelect: (i) {
+                      if (i == null || i >= catKeys.length) return;
+                      final key = catKeys[i];
+                      setState(
+                          () => _selectedCat = _selectedCat == key ? null : key);
+                    },
+                  ),
+              ],
+            ),
+          ),
         ),
         // 选中分类时显示该分类下的每一笔记录明细
         if (_selectedCat != null && byCat.containsKey(_selectedCat)) ...[
@@ -453,7 +396,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             return Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: colors[i % colors.length].withOpacity(0.1),
+                color: chartPalette[i % chartPalette.length].withOpacity(0.1),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Column(
@@ -463,7 +406,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                     children: [
                       CircleAvatar(
                         backgroundColor:
-                            colors[i % colors.length].withOpacity(0.2),
+                            chartPalette[i % chartPalette.length].withOpacity(0.2),
                         child: Text(cat?.icon ?? '💸',
                             style: const TextStyle(fontSize: 22)),
                       ),
@@ -486,7 +429,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
                           style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
-                              color: colors[i % colors.length])),
+                              color: chartPalette[i % chartPalette.length])),
                     ],
                   ),
                   if (txns.isNotEmpty) const Divider(height: 16),
@@ -516,7 +459,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             );
           }),
         ],
-        if (sections.isNotEmpty) const SizedBox(height: 12),
+        if (catKeys.isNotEmpty) const SizedBox(height: 12),
         ...catKeys.asMap().entries.map((e) {
           final cat = findCategory(data.categories, e.value);
           final v = byCat[e.value]!;
@@ -526,48 +469,18 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             onTap: () => setState(
                 () => _selectedCat = _selectedCat == e.value ? null : e.value),
             tileColor: isSel
-                ? colors[e.key % colors.length].withOpacity(0.08)
+                ? chartPalette[e.key % chartPalette.length].withOpacity(0.08)
                 : null,
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10)),
             leading: CircleAvatar(
-              backgroundColor: colors[e.key % colors.length].withOpacity(0.15),
+              backgroundColor: chartPalette[e.key % chartPalette.length].withOpacity(0.15),
               child: Text(cat?.icon ?? '💸'),
             ),
             title: Text(cat?.name ?? '未知'),
             trailing: Text('¥${v.toStringAsFixed(2)} (${pct.toStringAsFixed(0)}%)'),
           );
         }),
-        const SizedBox(height: 20),
-        Text(barTitle,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 12),
-        // 「月」柱子多(28~31 根),横向可滚动并给足柱距,保证顶部金额不互相压字;
-        // 周/年柱子少,直接铺满宽度。
-        if (_mode == StatsMode.month)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                height: 200,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: SizedBox(
-                    width: buckets.length * 34.0 + 28,
-                    child: barChart,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 6),
-              Center(
-                child: Text('← 左右滑动查看每天的支出 →',
-                    style:
-                        TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-              ),
-            ],
-          )
-        else
-          SizedBox(height: 200, child: barChart),
       ],
     );
   }

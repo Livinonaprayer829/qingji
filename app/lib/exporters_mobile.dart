@@ -37,9 +37,18 @@ Future<void> exportCsv(BuildContext context, AppData data, List<Txn> txns,
 /// 导出 HTML 账单报告(汇总 + 支出饼图 + 明细),浏览器打开即可,可另存为 PDF。
 Future<void> exportHtmlReport(BuildContext context, AppData data,
     List<Txn> txns,
-    {required String rangeText, required int selectedDays, String? fileStem}) async {
+    {required String rangeText,
+    required int selectedDays,
+    String? fileStem,
+    DateTime? rangeStart,
+    DateTime? rangeEnd}) async {
   final html = buildReportHtml(
-      data: data, txns: txns, rangeText: rangeText, selectedDays: selectedDays);
+      data: data,
+      txns: txns,
+      rangeText: rangeText,
+      selectedDays: selectedDays,
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd);
   final stem = fileStem ?? 'qingji_${DateTime.now().millisecondsSinceEpoch}';
   await _saveAndShare(html, '$stem.html', '青记账单报告');
   if (context.mounted) {

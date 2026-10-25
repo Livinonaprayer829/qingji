@@ -453,10 +453,14 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
     if (_format == 0) {
       await exportCsv(context, data, sorted, fileStem: _fileStem);
     } else {
+      // 传真实区间(首/末选中日),供报告里的趋势图按天分桶
+      final keys = _selected.toList()..sort();
       await exportHtmlReport(context, data, sorted,
           rangeText: _rangeText,
           selectedDays: _selected.length,
-          fileStem: _fileStem);
+          fileStem: _fileStem,
+          rangeStart: keys.isEmpty ? null : DateTime.parse(keys.first),
+          rangeEnd: keys.isEmpty ? null : DateTime.parse(keys.last));
     }
   }
 }
