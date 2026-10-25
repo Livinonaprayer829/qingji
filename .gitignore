@@ -36,3 +36,6 @@ app/tool/report-sample.html
 app/tool/splash_frames.png
 app/tool/splash_preview.gif
 app/stats_preview.html
+
+# 构建诊断日志（MakeAPK.bat 生成）
+app/build_log.txt

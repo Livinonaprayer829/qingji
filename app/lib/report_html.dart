@@ -110,7 +110,9 @@ String buildReportHtml({
   .panel { background:#fff; border-radius:14px; padding:18px;
            box-shadow:0 1px 3px rgba(0,0,0,.06); }
   .pieRow { display:flex; gap:22px; align-items:center; flex-wrap:wrap; }
-  .chartBox { flex:0 0 auto; }
+  /* 关键：不能写死宽度，否则手机屏放不下 → 右边留白/溢出 */
+  .chartBox { flex:0 1 420px; width:100%; max-width:420px; margin:0 auto; min-width:0; }
+  .chartBox svg { width:100%; height:auto; display:block; }
   table { border-collapse:collapse; width:100%; font-size:13px; }
   th,td { text-align:left; padding:8px 10px; border-bottom:1px solid #eef1f3; }
   th { color:#7a8794; font-weight:600; font-size:12px; }
@@ -137,6 +139,8 @@ String buildReportHtml({
   .bstat .bk { color:#8b97a3; font-size:12px; margin-top:2px; }
   .barBox { width:100%; }
   .barBox svg { width:100%; height:auto; display:block; }
+  .barBox-d { max-width:760px; }
+  .barBox-m { display:none; }
   .bt-bar { transition: fill .18s ease; }
   .bt-col:hover .bt-bar { fill:#0A84FF; }
   .bt-hit { fill:transparent; }
@@ -173,6 +177,25 @@ String buildReportHtml({
   .ditem .n { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .ditem .a { font-weight:600; white-space:nowrap; }
   .fade { transition: opacity .18s ease; }
+
+  /* ---- 手机端（窄屏）适配 ---- */
+  @media (max-width: 600px) {
+    body { padding:16px 12px; }
+    h1 { font-size:19px; }
+    .sub { font-size:12px; margin-bottom:16px; }
+    h2 { font-size:15px; margin:20px 0 10px; }
+    .cards { gap:8px; margin-bottom:16px; }
+    .card { padding:12px 13px; border-radius:12px; }
+    .card .v { font-size:19px; }
+    .panel { padding:14px; border-radius:12px; }
+    .pieRow { gap:12px; }
+    .bstat { gap:24px; margin-bottom:8px; }
+    .bstat .bv { font-size:20px; }
+    table { font-size:12.5px; }
+    th, td { padding:7px 8px; }
+    .barBox-d { display:none; }
+    .barBox-m { display:block; }
+  }
 </style></head><body><div class="wrap">''');
 
   // 头部
@@ -205,7 +228,10 @@ String buildReportHtml({
     b.writeln('<div><div class="bv">¥${_money(trend.maxExpense)}</div>'
         '<div class="bk">${trend.byMonth ? '单月最高' : '单日最高'}</div></div>');
     b.writeln('</div>');
-    b.writeln('<div class="barBox">${_barTrendSvg(trend)}</div>');
+    // 桌面用宽版，手机用窄版（窄版文字按 1:1 渲染，不会缩成肉眼难辨的小字）
+    b.writeln('<div class="barBox barBox-d">${_barTrendSvg(trend)}</div>');
+    b.writeln('<div class="barBox barBox-m">'
+        '${_barTrendSvg(trend, w: 340, h: 172)}</div>');
   }
   b.writeln('</div>');
 
@@ -612,11 +638,10 @@ _TrendData _trendPoints(List<Txn> txns, DateTime? rs, DateTime? re) {
 }
 
 /// 柱状趋势 SVG：浅色圆角柱 + 横向虚线网格 + 右侧刻度 + 悬停深色浮窗
-String _barTrendSvg(_TrendData t) {
-  const w = 760.0, h = 210.0;
+String _barTrendSvg(_TrendData t, {double w = 760, double h = 210}) {
   const padL = 8.0, padR = 44.0, padT = 34.0, padB = 22.0;
-  const plotW = w - padL - padR;
-  const plotH = h - padT - padB;
+  final plotW = w - padL - padR;
+  final plotH = h - padT - padB;
 
   final (step, maxY) = _niceScale(t.maxExpense);
   final n = t.points.length;
