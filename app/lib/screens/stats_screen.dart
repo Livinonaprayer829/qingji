@@ -5,6 +5,7 @@ import '../providers.dart';
 import '../utils.dart';
 import '../widgets/bar_trend_card.dart';
 import '../widgets/donut_chart.dart';
+import 'calendar_page.dart';
 
 enum StatsMode { week, month, year }
 
@@ -47,6 +48,27 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
       _mode = m;
       _anchor = _startOfThis(m);
     });
+  }
+
+  /// 点击「按周/按月/按年」后，日历页要定位到哪个月份（**永远是月视图**）：
+  /// - 没手动翻过页（仍是当前这一期）⇒ 今天所在月份
+  ///   （哪怕这一周跨月/跨年，也以今天所在月份为准）
+  /// - 手动翻到别的周 ⇒ 那一周**周一**所属的月份
+  /// - 手动翻到别的年 ⇒ 那一年的 **1 月**
+  /// - 手动翻到别的月 ⇒ 那个月
+  DateTime _calendarTargetMonth(StatsMode m) {
+    final now = DateTime.now();
+    if (_anchor == _startOfThis(m)) return DateTime(now.year, now.month, 1);
+    if (m == StatsMode.year) return DateTime(_anchor.year, 1, 1);
+    return DateTime(_anchor.year, _anchor.month, 1);
+  }
+
+  /// 跳转到独立日历页（左上角有返回按钮，返回后仍在统计页）
+  void _openCalendar(StatsMode m) {
+    final target = _calendarTargetMonth(m);
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => CalendarPage(initialMonth: target),
+    ));
   }
 
   /// 翻看上一期 / 下一期
@@ -222,26 +244,32 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
               iconSize: 28,
               tooltip: '上一${_modeLabel[_mode]}',
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_periodLabel,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold)),
-                  // 仅"按周"时在周期标签下补具体日期区间
-                  if (_mode == StatsMode.week) ...[
-                    const SizedBox(height: 2),
-                    Text(_periodRangeLabel,
-                        style: TextStyle(
-                            fontSize: 12.5, color: Colors.grey.shade700)),
+            // 期间标签：**点它进入独立日历页**（月视图，定位到当前这一期所在的月份）
+            InkWell(
+              onTap: () => _openCalendar(_mode),
+              borderRadius: BorderRadius.circular(24),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_periodLabel,
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    // 仅"按周"时在周期标签下补具体日期区间
+                    if (_mode == StatsMode.week) ...[
+                      const SizedBox(height: 2),
+                      Text(_periodRangeLabel,
+                          style: TextStyle(
+                              fontSize: 12.5, color: Colors.grey.shade700)),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
             IconButton(

@@ -231,7 +231,7 @@ String buildReportHtml({
     // 桌面用宽版，手机用窄版（窄版文字按 1:1 渲染，不会缩成肉眼难辨的小字）
     b.writeln('<div class="barBox barBox-d">${_barTrendSvg(trend)}</div>');
     b.writeln('<div class="barBox barBox-m">'
-        '${_barTrendSvg(trend, w: 340, h: 172)}</div>');
+        '${_barTrendSvg(trend, w: 340, h: 196)}</div>');
   }
   b.writeln('</div>');
 
@@ -638,8 +638,11 @@ _TrendData _trendPoints(List<Txn> txns, DateTime? rs, DateTime? re) {
 }
 
 /// 柱状趋势 SVG：浅色圆角柱 + 横向虚线网格 + 右侧刻度 + 悬停深色浮窗
-String _barTrendSvg(_TrendData t, {double w = 760, double h = 210}) {
-  const padL = 8.0, padR = 44.0, padT = 34.0, padB = 22.0;
+String _barTrendSvg(_TrendData t, {double w = 760, double h = 236}) {
+  // padT 里预留"浮窗带"：浮窗固定在顶部（数字区正下方），
+  // 柱子最高也到不了那里 ⇒ 浮窗永远不会压住柱子，
+  // 于是虚线可以很长地画在浮窗下面。
+  const padL = 8.0, padR = 44.0, padT = 68.0, padB = 22.0;
   final plotW = w - padL - padR;
   final plotH = h - padT - padB;
 
@@ -647,6 +650,37 @@ String _barTrendSvg(_TrendData t, {double w = 760, double h = 210}) {
   final n = t.points.length;
   final slot = plotW / n;
   final barW = math.min(slot * 0.55, 16.0);
+
+  // 统一先算好每根柱子的几何，柱层与浮窗层共用
+  final cxs = <double>[];
+  final tops = <double>[];
+  final heights = <double>[];
+  for (var i = 0; i < n; i++) {
+    final bh = maxY <= 0 ? 0.0 : (t.points[i].expense / maxY) * plotH;
+    cxs.add(padL + slot * (i + 0.5));
+    heights.add(bh);
+    tops.add(padT + plotH - bh);
+  }
+
+  // 浮窗几何也预先算好：柱子上的虚线要用它的"下沿"作为起点
+  const tipW = 96.0;
+  final tipHs = <double>[];
+  final tipXs = <double>[];
+  final tipYs = <double>[];
+  for (var i = 0; i < n; i++) {
+    final p = t.points[i];
+    final lineCount = 2 + (p.income > 0 ? 1 : 0);
+    final th = 12.0 + lineCount * 13.0;
+    var tx = cxs[i] - tipW / 2;
+    if (tx < padL) tx = padL;
+    if (tx + tipW > w - 4) tx = w - 4 - tipW;
+    // 浮窗**固定在顶部**（数字区下方），不跟柱子走 ——
+    // 这样"浮窗下沿 → 柱顶"才有足够长度画出一条长长的虚线。
+    const ty = 4.0;
+    tipHs.add(th);
+    tipXs.add(tx);
+    tipYs.add(ty);
+  }
 
   final sb = StringBuffer();
   sb.writeln('<svg viewBox="0 0 ${w.toInt()} ${h.toInt()}" '
@@ -664,41 +698,64 @@ String _barTrendSvg(_TrendData t, {double w = 760, double h = 210}) {
         '${_axisLabel(v)}</text>');
   }
 
+  // ---- 柱层：每列一个 g（类名带序号，供浮窗层配对）----
   for (var i = 0; i < n; i++) {
-    final p = t.points[i];
-    final cx = padL + slot * (i + 0.5);
-    final bh = maxY <= 0 ? 0.0 : (p.expense / maxY) * plotH;
-    final top = padT + plotH - bh;
-
-    sb.writeln('<g class="bt-col">');
+    final cx = cxs[i];
+    final bh = heights[i];
+    final top = tops[i];
+    sb.writeln('<g class="bt-col bt-c$i">');
     // 悬停热区（覆盖整列，好点中）
     sb.writeln('<rect class="bt-hit" x="${(cx - slot / 2).toStringAsFixed(1)}" '
         'y="$padT" width="${slot.toStringAsFixed(1)}" '
         'height="${plotH.toStringAsFixed(1)}"/>');
     if (bh > 0) {
-      sb.writeln('<line class="bt-ind" x1="${cx.toStringAsFixed(1)}" y1="$padT" '
-          'x2="${cx.toStringAsFixed(1)}" y2="${(top - 2).toStringAsFixed(1)}" '
-          'stroke="#9AA4B2" stroke-width="1" stroke-dasharray="4 4"/>');
+      // 竖向虚线：从**浮窗下沿**画到柱顶（不从图表顶部拉下来，
+      // 否则会有一截露在浮窗上方，看起来像浮窗压在线上）
+      final lineTop = tipYs[i] + tipHs[i] + 2;
+      if (lineTop < top - 3) {
+        sb.writeln('<line class="bt-ind" '
+            'x1="${cx.toStringAsFixed(1)}" y1="${lineTop.toStringAsFixed(1)}" '
+            'x2="${cx.toStringAsFixed(1)}" y2="${(top - 2).toStringAsFixed(1)}" '
+            'stroke="#9AA4B2" stroke-width="1" stroke-dasharray="4 4"/>');
+      }
       sb.writeln('<rect class="bt-bar" '
           'x="${(cx - barW / 2).toStringAsFixed(1)}" '
           'y="${top.toStringAsFixed(1)}" width="${barW.toStringAsFixed(1)}" '
           'height="${bh.toStringAsFixed(1)}" rx="3" fill="#BFE0F7"/>');
     }
+    sb.writeln('</g>');
+  }
 
-    // 浮窗
+  // ---- 横轴标签 ----
+  for (var i = 0; i < n; i++) {
+    final p = t.points[i];
+    if (!p.showLabel) continue;
+    sb.writeln('<text class="bt-ax" x="${cxs[i].toStringAsFixed(1)}" '
+        'y="${(h - 6).toStringAsFixed(1)}" text-anchor="middle">'
+        '${_esc(p.label)}</text>');
+  }
+
+  // ---- 悬停配对规则 ----
+  // 浮窗层是柱层的**后继兄弟**，所以 ~ 能选中；逐列生成一条规则。
+  sb.writeln('<style>');
+  for (var i = 0; i < n; i++) {
+    sb.writeln('.bt-c$i:hover ~ .bt-tips .bt-t$i{opacity:1}');
+  }
+  sb.writeln('</style>');
+
+  // ---- 浮窗层：最后绘制 ⇒ 永远盖在柱子上，不会被邻居柱遮挡 ----
+  sb.writeln('<g class="bt-tips">');
+  for (var i = 0; i < n; i++) {
+    final p = t.points[i];
     final lines = <String>[p.tip, '支出 ¥${_money(p.expense)}'];
     if (p.income > 0) lines.add('收入 ¥${_money(p.income)}');
-    const tipW = 96.0;
-    final tipH = 12.0 + lines.length * 13.0;
-    var tx = cx - tipW / 2;
-    if (tx < padL) tx = padL;
-    if (tx + tipW > w - 4) tx = w - 4 - tipW;
-    var ty = top - tipH - 8;
-    if (ty < 2) ty = 2;
-    sb.writeln('<g class="bt-tip">');
+    final tx = tipXs[i];
+    final ty = tipYs[i];
+    final th = tipHs[i];
+    sb.writeln('<g class="bt-tip bt-t$i">');
     sb.writeln('<rect x="${tx.toStringAsFixed(1)}" '
         'y="${ty.toStringAsFixed(1)}" width="$tipW" '
-        'height="${tipH.toStringAsFixed(1)}" rx="8" fill="#1C1C1E"/>');
+        'height="${th.toStringAsFixed(1)}" rx="8" fill="#1C1C1E"/>');
     for (var k = 0; k < lines.length; k++) {
       final ly = ty + 13 + k * 13;
       sb.writeln('<text class="${k == 0 ? 'bt-t1' : 'bt-t2'}" '
@@ -706,15 +763,8 @@ String _barTrendSvg(_TrendData t, {double w = 760, double h = 210}) {
           'y="${ly.toStringAsFixed(1)}">${_esc(lines[k])}</text>');
     }
     sb.writeln('</g>');
-    sb.writeln('</g>');
-
-    // 横轴标签
-    if (p.showLabel) {
-      sb.writeln('<text class="bt-ax" x="${cx.toStringAsFixed(1)}" '
-          'y="${(h - 6).toStringAsFixed(1)}" text-anchor="middle">'
-          '${_esc(p.label)}</text>');
-    }
   }
+  sb.writeln('</g>');
 
   sb.writeln('</svg>');
   return sb.toString();

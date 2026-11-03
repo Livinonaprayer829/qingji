@@ -30,25 +30,6 @@ class SettingsScreen extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        const Text('分类',
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
-        const SizedBox(height: 8),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: data.categories
-                  .map((c) => Chip(
-                        avatar: Text(c.icon),
-                        label: Text(c.name),
-                      ))
-                  .toList(),
-            ),
-          ),
-        ),
         const SizedBox(height: 20),
         const Text('数据',
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),

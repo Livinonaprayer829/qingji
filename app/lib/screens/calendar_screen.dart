@@ -13,7 +13,10 @@ String _fmtNet(double v) {
 }
 
 class CalendarScreen extends ConsumerStatefulWidget {
-  const CalendarScreen({super.key});
+  /// 进入时要定位到的月份（只取 year/month）。为 null 时定位到今天所在月份。
+  final DateTime? initialMonth;
+
+  const CalendarScreen({super.key, this.initialMonth});
   @override
   ConsumerState<CalendarScreen> createState() => _CalendarScreenState();
 }
@@ -24,7 +27,8 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
   @override
   void initState() {
     super.initState();
-    final n = DateTime.now();
+    // 一律以「月」为单位展示：不会切到周视图
+    final n = widget.initialMonth ?? DateTime.now();
     _focused = DateTime(n.year, n.month, 1);
   }
 

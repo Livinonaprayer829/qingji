@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/home_screen.dart';
 import 'screens/history_screen.dart';
-import 'screens/calendar_screen.dart';
 import 'screens/stats_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/loan_screen.dart';
@@ -46,15 +45,16 @@ class _DakaAppState extends State<DakaApp> {
     await showUpdateDialog(context, info);
   }
 
+  // 底部 5 个 Tab：概览 / 账单 / 统计 / 借还 / 我的
+  // 「日历」不再是 Tab —— 改由统计页的「按周/按月/按年」push 独立日历页进入
   final _pages = const [
     HomeScreen(),
     HistoryScreen(),
-    CalendarScreen(),
     StatsScreen(),
-    SettingsScreen(),
     LoanScreen(),
+    SettingsScreen(),
   ];
-  final _titles = const ['概览', '账单', '日历', '统计', '我的', '借还'];
+  final _titles = const ['概览', '账单', '统计', '借还', '我的'];
 
   @override
   Widget build(BuildContext context) {
@@ -74,27 +74,23 @@ class _DakaAppState extends State<DakaApp> {
               selectedIcon: Icon(Icons.receipt_long),
               label: '账单'),
           NavigationDestination(
-              icon: Icon(Icons.calendar_month_outlined),
-              selectedIcon: Icon(Icons.calendar_month),
-              label: '日历'),
-          NavigationDestination(
               icon: Icon(Icons.bar_chart_outlined),
               selectedIcon: Icon(Icons.bar_chart),
               label: '统计'),
           NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: '我的'),
-          NavigationDestination(
               icon: Icon(Icons.swap_horiz_outlined),
               selectedIcon: Icon(Icons.swap_horiz),
               label: '借还'),
+          NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: '我的'),
         ],
       ),
-      // 只在需要记账的页面显示 FAB:概览(0)/账单(1)/日历(2)。
-      // 统计(3)与我的(4)不需要记一笔;借还(5)由 LoanScreen 自己提供
+      // 只在需要记账的页面显示 FAB:概览(0)/账单(1)。
+      // 统计(2)/我的(4) 不需要记一笔;借还(3)由 LoanScreen 自己提供
       // (它要带上当前筛选的借出/借入类型),这里都不能再给。
-      floatingActionButton: _idx > 2
+      floatingActionButton: _idx > 1
           ? null
           : FloatingActionButton(
               backgroundColor: Theme.of(context).colorScheme.primary,
