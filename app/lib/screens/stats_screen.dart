@@ -20,7 +20,8 @@ class StatsScreen extends ConsumerStatefulWidget {
 }
 
 class _StatsScreenState extends ConsumerState<StatsScreen> {
-  StatsMode _mode = StatsMode.month;
+  // 默认按「周」展示：进页面直接加载当前周（周一~周日）的收支
+  StatsMode _mode = StatsMode.week;
   // 当前展示的期间起点：周=周一，月=1号，年=1月1日
   late DateTime _anchor;
   // 饼图当前选中的分类(点扇区查看明细,再次点取消)
@@ -69,6 +70,33 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => CalendarPage(initialMonth: target),
     ));
+  }
+
+  /// 金额小模块（支出 / 收入 / 结余 三列共用）
+  Widget _moneyStat(String label, double value, {Color? color}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(label,
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+        const SizedBox(height: 3),
+        // 金额可能很长（如 ¥-12345.67），用 FittedBox 自动缩放，绝不溢出
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Text(
+            '¥${value.toStringAsFixed(2)}',
+            maxLines: 1,
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// 翻看上一期 / 下一期
@@ -232,41 +260,49 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
           selected: {_mode},
           onSelectionChanged: (s) => _setMode(s.first),
           showSelectedIcon: false,
+          // 收紧高度：给下方图表腾空间
+          style: const ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 10),
         // 第二组：期间翻页（上一期 / 下一期）
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // 左右翻页按钮：压小一点（默认 48×48 太高）
             IconButton(
               onPressed: () => _step(-1),
               icon: const Icon(Icons.chevron_left),
-              iconSize: 28,
+              iconSize: 26,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 38, height: 38),
               tooltip: '上一${_modeLabel[_mode]}',
             ),
             // 期间标签：**点它进入独立日历页**（月视图，定位到当前这一期所在的月份）
             InkWell(
               onTap: () => _openCalendar(_mode),
-              borderRadius: BorderRadius.circular(24),
+              borderRadius: BorderRadius.circular(22),
               child: Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
                 decoration: BoxDecoration(
                   color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(24),
+                  borderRadius: BorderRadius.circular(22),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(_periodLabel,
                         style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                            fontSize: 17, fontWeight: FontWeight.bold)),
                     // 仅"按周"时在周期标签下补具体日期区间
                     if (_mode == StatsMode.week) ...[
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       Text(_periodRangeLabel,
                           style: TextStyle(
-                              fontSize: 12.5, color: Colors.grey.shade700)),
+                              fontSize: 11.5, color: Colors.grey.shade700)),
                     ],
                   ],
                 ),
@@ -275,72 +311,29 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             IconButton(
               onPressed: _canNext ? () => _step(1) : null,
               icon: const Icon(Icons.chevron_right),
-              iconSize: 28,
+              iconSize: 26,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 38, height: 38),
               tooltip: '下一${_modeLabel[_mode]}',
             ),
           ],
         ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('支出',
-                          style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      const SizedBox(height: 4),
-                      Text('¥${totalExp.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('收入',
-                          style: TextStyle(color: Colors.grey, fontSize: 12)),
-                      const SizedBox(height: 4),
-                      Text('¥${totalInc.toStringAsFixed(2)}',
-                          style: const TextStyle(
-                              fontSize: 20, fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        // 结余 = 收入 - 支出
+        const SizedBox(height: 10),
+        // 支出 / 收入 / 结余：合成一张卡的**一行三列**（省下 ~110px 高度给图表）
         Card(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('结余',
-                    style: TextStyle(color: Colors.grey, fontSize: 12)),
+                Expanded(child: _moneyStat('支出', totalExp)),
                 const SizedBox(width: 8),
-                Text('（收入 − 支出）',
-                    style: TextStyle(
-                        color: Colors.grey.shade400, fontSize: 11)),
-                const Spacer(),
-                Text(
-                  '¥${(totalInc - totalExp).toStringAsFixed(2)}',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                Expanded(child: _moneyStat('收入', totalInc)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _moneyStat(
+                    '结余',
+                    totalInc - totalExp,
                     color: (totalInc - totalExp) >= 0
                         ? const Color(0xFF0E9E8E)
                         : const Color(0xFFD9534F),
@@ -350,7 +343,7 @@ class _StatsScreenState extends ConsumerState<StatsScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
 
         // ---- 柱状趋势 ----
         BarTrendCard(

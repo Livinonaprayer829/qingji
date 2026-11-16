@@ -52,7 +52,9 @@ class BarTrendCard extends StatefulWidget {
     required this.maxLabel,
     required this.items,
     this.currency = '¥',
-    this.chartHeight = 196,
+    // 240 = 顶部浮窗带(64) + 柱子绘图区(150) + 底部日期刻度(26)
+    // 按周展示时 7 根柱子（周一~周日）都在这个绘图区里，不会被裁切
+    this.chartHeight = 240,
     this.avgDivisor,
   });
 
@@ -87,14 +89,15 @@ class _BarTrendCardState extends State<BarTrendCard> {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(18, 18, 14, 12),
+        // 内边距和标题/数字之间的间距都收紧了，把高度让给图表
+        padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(widget.title,
                 style:
-                    const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 14),
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
             Row(
               children: [
                 _bigStat(avg, widget.avgLabel),
@@ -102,7 +105,7 @@ class _BarTrendCardState extends State<BarTrendCard> {
                 _bigStat(maxV, widget.maxLabel),
               ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 10),
             SizedBox(
               height: widget.chartHeight,
               child: empty
@@ -261,14 +264,15 @@ class _BarTrendCardState extends State<BarTrendCard> {
   Widget _bigStat(double value, String label) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
           formatMoney(value, widget.currency),
-          style: const TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         Text(label,
-            style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600)),
+            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600)),
       ],
     );
   }

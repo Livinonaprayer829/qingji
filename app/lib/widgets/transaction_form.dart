@@ -48,11 +48,15 @@ class _TxnFormState extends ConsumerState<TxnForm> {
       _date = e.date;
     } else {
       _type = TxType.expense;
-      _categoryId = data.categories
-              .where((c) => c.type == TxType.expense)
-              .isEmpty
+      final expenses =
+          data.categories.where((c) => c.type == TxType.expense).toList();
+      // 默认分类：第一个支出分类（购物）
+      _categoryId = expenses.isEmpty
           ? data.categories.first.id
-          : data.categories.firstWhere((c) => c.type == TxType.expense).id;
+          : expenses.first.id;
+      // 再按当前时段自动换成 早餐 / 午餐 / 晚餐（不在时段内就保持上面的默认）
+      final timed = _timeBasedCategoryId(expenses);
+      if (timed != null) _categoryId = timed;
       _accountId = data.accounts.isNotEmpty ? data.accounts.first.id : null;
       // 预填全局默认账户;未设置(或该账户已不存在)时沿用原逻辑:取第一个账户
       final def = ref.read(defaultAccountProvider);
@@ -61,6 +65,37 @@ class _TxnFormState extends ConsumerState<TxnForm> {
       }
       _date = widget.initialDate ?? DateTime.now();
     }
+  }
+
+  /// 按**当前小时**挑默认分类：
+  /// - 6~10 点 ⇒ 早餐
+  /// - 11~14 点 ⇒ 午餐
+  /// - 16~22 点 ⇒ 晚餐
+  /// - 其余时段（15 点、23 点、凌晨）不干预，保持原来的默认（购物）
+  ///
+  /// 找不到对应分类（比如用户改过名字/删掉了）时返回 null，调用方继续用原默认。
+  String? _timeBasedCategoryId(List<Category> expenses) {
+    final h = DateTime.now().hour;
+    final String? want;
+    if (h >= 6 && h <= 10) {
+      want = '早餐';
+    } else if (h >= 11 && h <= 14) {
+      want = '午餐';
+    } else if (h >= 16 && h <= 22) {
+      want = '晚餐';
+    } else {
+      want = null;
+    }
+    if (want == null) return null;
+
+    for (final c in expenses) {
+      if (c.name == want) return c.id;
+    }
+    // 改名了也尽量命中（例如"早餐(自制)"）
+    for (final c in expenses) {
+      if (c.name.contains(want)) return c.id;
+    }
+    return null;
   }
 
   @override
