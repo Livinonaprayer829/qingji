@@ -1,8 +1,8 @@
 {
   "_comment": "青记 更新清单。发版后请把 version / url / size / notes 改成新版本。App 会优先读这个文件（jsDelivr + raw 双源），api.github.com 只做兜底。",
-  "version": "1.5.15",
-  "notes": "修复：记账保存后本地少一条（云端覆盖）、15 点等时段默认分类错成其他、日历格子金额折行溢出、开 VPN 时检测不到更新。",
-  "url": "https://github.com/Livinonaprayer829/qingji/releases/download/v1.5.15/qingji-latest.apk",
+  "version": "1.5.19",
+  "notes": "删除改为墓碑同步（B 删 A 也删、不会复活）；同步先落地本地再上传，失败不再丢数据；分类按名称收敛去重；切收支后默认分类不再丢失。",
+  "url": "https://github.com/Livinonaprayer829/qingji/releases/download/v1.5.19/qingji-latest.apk",
   "name": "qingji-latest.apk",
-  "size": 58262062
+  "size": 58376750
 }
