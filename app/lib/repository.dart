@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -64,6 +65,79 @@ class DataRepository {
   /// 借还表可能尚未在 Supabase 创建,此前错误被静默吞掉,用户无从排查。
   String? lastLoansError;
 
+  // ---------------- 删除墓碑（tombstone）----------------
+  //
+  // 合并是"并集"：A 删了一条，B 那边还在，B 一同步就会把它并回来（删除被撤销）。
+  // 所以删除必须留个"这条已删除"的记录，且**保留一段时间**，让其他设备也能学到。
+  // 规则：任一设备删除后，这条永远保持删除（删除优先，不再复活）。
+  static const _tombstoneKey = 'deleted_ids_v1';
+  static const _tombstoneTtlDays = 180;
+
+  final Map<String, DateTime> _tombstones = {};
+  bool _tombstonesLoaded = false;
+
+  /// 云端"标记删除"失败的 id，下次同步重试
+  final Set<String> _pendingDeletionPush = {};
+
+  Future<void> _ensureTombstones() async {
+    if (_tombstonesLoaded) return;
+    _tombstonesLoaded = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_tombstoneKey);
+      if (raw == null) return;
+      final map = jsonDecode(raw) as Map<String, dynamic>;
+      final cutoff = DateTime.now().subtract(const Duration(days: _tombstoneTtlDays));
+      map.forEach((id, v) {
+        final t = DateTime.tryParse(v.toString());
+        if (t != null && t.isAfter(cutoff)) _tombstones[id] = t;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveTombstones() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _tombstoneKey,
+        jsonEncode(_tombstones.map((k, v) => MapEntry(k, v.toIso8601String()))),
+      );
+    } catch (_) {}
+  }
+
+  bool isTombstoned(String id) => _tombstones.containsKey(id);
+
+  Future<void> _addTombstone(String id) async {
+    await _ensureTombstones();
+    _tombstones[id] = DateTime.now();
+    await _saveTombstones();
+  }
+
+  /// 记账：标记删除（本地墓碑 + 云端标 deleted_at）
+  Future<void> markTxnDeleted(String id) async {
+    await _addTombstone(id);
+    await _pushDeletionMark(id, 'transactions');
+  }
+
+  /// 借还：标记删除
+  Future<void> markLoanDeleted(String id) async {
+    await _addTombstone(id);
+    await _pushDeletionMark(id, 'loans');
+  }
+
+  /// 云端把某行标成 deleted_at（不真删，其他设备才学得到）
+  Future<void> _pushDeletionMark(String id, String table) async {
+    final uid = userId;
+    if (uid == null) return;
+    try {
+      await _sb.from(table).update(
+          {'deleted_at': DateTime.now().toUtc().toIso8601String()}).eq('id', id);
+    } catch (_) {
+      // 列还没加 / 网络问题：记下来，下次同步重试
+      _pendingDeletionPush.add(id);
+    }
+  }
+
   // ---------------- 全局默认记账账户(本地偏好,不参与云同步) ----------------
   static const _keyDefaultAccount = 'default_account_id';
 
@@ -83,6 +157,7 @@ class DataRepository {
 
   // ---------------- 本地缓存 ----------------
   Future<AppData> loadLocal() async {
+    await _ensureTombstones();
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_key);
     if (raw == null) return AppData.empty();
@@ -95,11 +170,14 @@ class DataRepository {
         categories: (map['categories'] as List)
             .map((e) => Category.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList(),
+        // 墓碑过滤：删过的东西即使还残留在本地文件里也不再显示
         transactions: (map['transactions'] as List)
             .map((e) => Txn.fromJson(Map<String, dynamic>.from(e as Map)))
+            .where((t) => !isTombstoned(t.id))
             .toList(),
         loans: (map['loans'] as List? ?? [])
             .map((e) => Loan.fromJson(Map<String, dynamic>.from(e as Map)))
+            .where((l) => !isTombstoned(l.id))
             .toList(),
       );
     } catch (_) {
@@ -245,6 +323,7 @@ class DataRepository {
   /// 从云端拉取当前用户全部数据(RLS 保证只能读到自己的)
   Future<AppData?> fetchCloud() async {
     if (!isSignedIn) return null;
+    await _ensureTombstones();
     try {
       final acc = await _sb.from('accounts').select();
       final cat = await _sb.from('categories').select();
@@ -258,6 +337,35 @@ class DataRepository {
         lastLoansError = e.toString();
         loan = const [];
       }
+
+      // 云端 deleted_at 非空的行 = 在别的设备上删掉的。
+      // 把它们记进本地墓碑（这样本机也会删掉），并且**不进 AppData**。
+      final liveTx = <Txn>[];
+      for (final e in (tx as List)) {
+        final m = Map<String, dynamic>.from(e as Map);
+        final id = (m['id'] ?? '').toString();
+        if (m['deleted_at'] != null) {
+          if (id.isNotEmpty) _tombstones[id] = DateTime.now();
+          continue;
+        }
+        if (id.isNotEmpty && isTombstoned(id)) continue;
+        liveTx.add(Txn.fromCloud(m));
+      }
+
+      final liveLoans = <Loan>[];
+      for (final e in (loan as List)) {
+        final m = Map<String, dynamic>.from(e as Map);
+        final id = (m['id'] ?? '').toString();
+        if (m['deleted_at'] != null) {
+          if (id.isNotEmpty) _tombstones[id] = DateTime.now();
+          continue;
+        }
+        if (id.isNotEmpty && isTombstoned(id)) continue;
+        liveLoans.add(Loan.fromCloud(m));
+      }
+
+      if (_tombstones.isNotEmpty) await _saveTombstones();
+
       return AppData(
         accounts: (acc as List)
             .map((e) => Account.fromCloud(Map<String, dynamic>.from(e as Map)))
@@ -265,12 +373,8 @@ class DataRepository {
         categories: (cat as List)
             .map((e) => Category.fromCloud(Map<String, dynamic>.from(e as Map)))
             .toList(),
-        transactions: (tx as List)
-            .map((e) => Txn.fromCloud(Map<String, dynamic>.from(e as Map)))
-            .toList(),
-        loans: (loan as List)
-            .map((e) => Loan.fromCloud(Map<String, dynamic>.from(e as Map)))
-            .toList(),
+        transactions: liveTx,
+        loans: liveLoans,
       );
     } catch (_) {
       return null;
@@ -445,10 +549,15 @@ class DataRepository {
     if (!changed) return local;
     final merged = local.copyWith(accounts: accs, transactions: txns);
     await saveLocal(merged);
+    // 与分类一致：云端清理是尽力而为，不能因为它抛错而让归一结果丢失
     if (isSignedIn) {
-      await pushAccounts(accs);
-      for (final t in changedTxns) await pushTxn(t);
-      for (final id in removedIds) await deleteAccount(id);
+      try {
+        await pushAccounts(accs);
+        for (final t in changedTxns) await pushTxn(t);
+        for (final id in removedIds) await deleteAccount(id);
+      } catch (e) {
+        debugPrint('cleanup accounts on cloud failed: $e');
+      }
     }
     return merged;
   }
@@ -511,13 +620,19 @@ class DataRepository {
     if (!changed) return local;
     final merged = local.copyWith(categories: cats, transactions: txns);
     await saveLocal(merged);
+    // 清理云端多余分类是"尽力而为"：删不掉也不能让整个同步/归一流程抛错，
+    // 否则界面会停在"带重复分类"的旧状态上。
     if (isSignedIn) {
-      await pushCategories(cats);
-      for (final t in changedTxns) {
-        await pushTxn(t);
-      }
-      for (final id in removedIds) {
-        await deleteCategory(id);
+      try {
+        await pushCategories(cats);
+        for (final t in changedTxns) {
+          await pushTxn(t);
+        }
+        for (final id in removedIds) {
+          await deleteCategory(id);
+        }
+      } catch (e) {
+        debugPrint('cleanup categories on cloud failed: $e');
       }
     }
     return merged;
@@ -557,22 +672,85 @@ class DataRepository {
     }
   }
 
+  /// 最近一次全量推送的错误（供同步页展示；null = 成功）
+  String? lastPushError;
+
   /// 全量推送(新用户首次把本地示例数据上传到云端)
   /// 注意:内置账户/分类不上云,避免多用户因固定 id 冲突触发 RLS 错误
+  ///
+  /// 单条失败**不再中断整批**：逐条记错、最后汇总抛一次，
+  /// 这样几百条流水里坏了一条，不会让整个同步流程报废。
+  /// 流水按 10 条并发推，避免 200+ 条串行导致代理层超时。
   Future<void> pushAll(AppData data) async {
+    final errs = <String>[];
+
     for (final a in data.accounts) {
       if (_isBuiltInAccount(a.id)) continue;
-      await pushAccount(a);
+      try {
+        await pushAccount(a);
+      } catch (e) {
+        errs.add('账户「${a.name}」: $e');
+      }
     }
     for (final c in data.categories) {
       if (_isBuiltInCategory(c.id)) continue;
-      await pushCategory(c);
+      try {
+        await pushCategory(c);
+      } catch (e) {
+        errs.add('分类「${c.name}」: $e');
+      }
     }
-    for (final t in data.transactions) {
-      await pushTxn(t);
+
+    const batchSize = 10;
+    for (var i = 0; i < data.transactions.length; i += batchSize) {
+      final slice = data.transactions.skip(i).take(batchSize).toList();
+      final results = await Future.wait(slice.map((t) async {
+        try {
+          await pushTxn(t);
+          return null;
+        } catch (e) {
+          return '流水 ${t.date.year}/${t.date.month}/${t.date.day}: $e';
+        }
+      }));
+      for (final r in results) {
+        if (r != null) errs.add(r);
+      }
     }
+
     for (final l in data.loans) {
-      await pushLoan(l);
+      try {
+        await pushLoan(l);
+      } catch (e) {
+        errs.add('借还「${l.person}」: $e');
+      }
+    }
+
+    lastPushError = errs.isEmpty ? null : errs.first;
+
+    // 重试之前"标记删除"失败的（列刚加好 / 当时网络抖动）
+    if (_pendingDeletionPush.isNotEmpty) {
+      final retry = List<String>.from(_pendingDeletionPush);
+      for (final id in retry) {
+        try {
+          await _sb
+              .from('transactions')
+              .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
+              .eq('id', id);
+          _pendingDeletionPush.remove(id);
+        } catch (_) {
+          try {
+            await _sb
+                .from('loans')
+                .update({'deleted_at': DateTime.now().toUtc().toIso8601String()})
+                .eq('id', id);
+            _pendingDeletionPush.remove(id);
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (errs.isNotEmpty) {
+      throw Exception('共 ${errs.length} 条上传失败，例：${errs.first}');
     }
   }
 
@@ -716,22 +894,72 @@ class DataRepository {
     for (final l in local.loans) {
       if (!seenLoan.contains(l.id)) mergedLoan.add(l);
     }
+
+    // ⚠️ 合并后必须**按名称收敛分类**：
+    // 云端可能同时存在「购物(内置固定 id)」和「购物(早期旧 id)」两种记录，
+    // 按 id 求并集会把它们都留下 ⇒ 记账页出现一堆重复分类。
+    // 这里以"内置 id 优先"为准则合并同名分类，并把流水上的 categoryId 归并过去。
+    final (dedupedCats, dedupedTx) = _dedupeCategoriesByName(mergedCat, mergedTx);
+
     return AppData(
       accounts: merged,
-      categories: mergedCat,
-      transactions: mergedTx,
-      loans: mergedLoan,
+      categories: dedupedCats,
+      // 墓碑过滤：删掉的东西**永远不参与合并**，否则会被另一台设备"复活"
+      transactions: dedupedTx.where((t) => !isTombstoned(t.id)).toList(),
+      loans: mergedLoan.where((l) => !isTombstoned(l.id)).toList(),
     );
   }
 
+  /// 分类按**名称**去重（内置 id 优先），并把流水的 categoryId 归并到保留条。
+  /// 返回 (去重后的分类, 归并后的流水)。
+  (List<Category>, List<Txn>) _dedupeCategoriesByName(
+      List<Category> cats, List<Txn> txns) {
+    final builtInIds = {for (final b in builtInCategories()) b.id};
+    final groups = <String, List<Category>>{};
+    for (final c in cats) {
+      groups.putIfAbsent(c.name, () => []).add(c);
+    }
+
+    final keepIdByDupId = <String, String>{};
+    final kept = <Category>[];
+    for (final list in groups.values) {
+      final keep = list.firstWhere((c) => builtInIds.contains(c.id),
+          orElse: () => list.first);
+      kept.add(keep);
+      for (final c in list) {
+        if (c.id != keep.id) keepIdByDupId[c.id] = keep.id;
+      }
+    }
+    if (keepIdByDupId.isEmpty) return (cats, txns);
+
+    final fixedTx = txns.map((t) {
+      final to = keepIdByDupId[t.categoryId];
+      return to == null ? t : t.copyWith(categoryId: to);
+    }).toList();
+    return (kept, fixedTx);
+  }
+
   /// 增量双向同步:拉云端 → 按 updatedAt 合并 → 推送 → 写回本地
+  /// 增量同步：拉云端 → 与本地按 updatedAt 合并 → **先落地到本地** → 再尽力回推。
+  ///
+  /// 顺序很关键：之前是"合并→推送→写本地"，只要推送抛错（RLS/外键/超时），
+  /// 本地就一条也拿不到（表现为同步页"本地 0 条 / 云端 249 条"，怎么点都同步不起来）。
+  /// 现在**先 saveLocal 再推**，上传失败只记录 [lastPushError]，不影响本地数据。
   Future<AppData?> syncIncremental(AppData local) async {
     if (!isSignedIn) return null;
     final cloud = await fetchCloud();
     if (cloud == null) return null;
     final merged = mergeWithCloud(local, cloud);
-    await pushAll(merged);
+
+    // ① 先把合并结果落地：这一步成功，本地就一定有数据
     await saveLocal(merged);
+
+    // ② 再尽力回推到云端：失败不阻断，错误留给同步页展示
+    try {
+      await pushAll(merged);
+    } catch (_) {
+      // lastPushError 已在 pushAll 里记录
+    }
     return merged;
   }
 

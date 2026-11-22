@@ -121,13 +121,25 @@ class AppDataNotifier extends Notifier<AppData> {
       // 这里把"当前 state"再合并进来，避免这几秒里的新记录被合并结果覆盖掉。
       next = _repo.mergeWithCloud(state, next);
 
-      // 归一(旧 id/旧名)→ 补齐内置账户、内置分类
-      next = await _repo.migrateIdsToUuid(next);
-      next = await _repo.ensureBuiltInAccounts(next);
-      next = await _repo.ensureBuiltInCategories(next);
+      // ① 先交给界面：万一后面的归一出错，也不会出现"本地 0 条"的空列表
+      state = next;
 
-      state = next; // 唯一一次赋值
+      // ② 归一(旧 id/旧名)→ 补齐内置账户、内置分类（失败不影响已拿到的数据）
+      try {
+        next = await _repo.migrateIdsToUuid(next);
+        next = await _repo.ensureBuiltInAccounts(next);
+        next = await _repo.ensureBuiltInCategories(next);
+      } catch (e) {
+        debugPrint('sync normalize failed: $e');
+      }
+
+      state = next;
       await _repo.saveLocal(state);
+      lastSyncError = null;
+    } catch (e) {
+      // 登录后的自动同步失败：**不要静默**，把原文留在同步页
+      lastSyncError = e.toString();
+      debugPrint('login sync failed: $e');
     } finally {
       _syncing = false;
     }
@@ -163,11 +175,13 @@ class AppDataNotifier extends Notifier<AppData> {
   }
 
   Future<void> deleteTx(String id) async {
+    // 先记"墓碑"（本地持久化 + 云端 deleted_at）：这样即使另一台设备还留着这条，
+    // 下次合并也不会把它并回来（删除优先，删了就不会复活）。
+    await _repo.markTxnDeleted(id);
     state = state.copyWith(
       transactions: state.transactions.where((e) => e.id != id).toList(),
     );
     await _repo.saveLocal(state);
-    await _tryPush(() => _repo.deleteTxn(id));
   }
 
   /// 写入时刷新 updatedAt,用于 last-write-wins
@@ -201,22 +215,36 @@ class AppDataNotifier extends Notifier<AppData> {
   }
 
   Future<void> deleteLoan(String id) async {
+    await _repo.markLoanDeleted(id);
     state = state.copyWith(
       loans: state.loans.where((e) => e.id != id).toList(),
     );
     await _repo.saveLocal(state);
-    await _tryPush(() => _repo.deleteLoan(id));
   }
 
   /// 增量双向同步:按 updatedAt 合并本地+云端,推送合并结果,写回本地
   Future<AppData?> syncIncremental() async {
-    final merged = await _repo.syncIncremental(state);
-    if (merged != null) state = merged;
-    return merged;
+    try {
+      final merged = await _repo.syncIncremental(state);
+      if (merged != null) state = merged;
+      lastSyncError = null;
+      return merged;
+    } catch (e) {
+      lastSyncError = e.toString();
+      rethrow;
+    }
   }
 
   /// 借还同步最近一次错误(用于同步页提示)。null 表示成功或尚未同步。
   String? get lastLoansError => _repo.lastLoansError;
+
+  /// 最近一次"回推云端"的错误。null = 成功。
+  /// 注意：即使它不为 null，本地数据也已经是最新合并结果（上传失败不影响本地）。
+  String? get lastPushError => _repo.lastPushError;
+
+  /// 最近一次同步流程本身的错误（拉取/合并/归一 任一步失败）。
+  /// 会**常驻**显示在同步页，方便定位问题，不会像 Toast 一样一闪就没。
+  String? lastSyncError;
 
   /// 强制覆盖上传:本地全量推云端
   Future<void> forceUpload() async => _repo.forceUpload(state);

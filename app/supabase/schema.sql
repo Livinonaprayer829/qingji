@@ -140,3 +140,13 @@ begin
   end loop;
 end $$;
 
+-- =========================================================
+-- 迁移:删除改为「标记删除」(墓碑)，让删除能跨设备同步
+-- ---------------------------------------------------------
+-- 背景:合并是"并集"，真删一行的话另一台设备会把它并回来（删了又复活）。
+--      改成记录 deleted_at 之后，所有设备都能学到"这条被删了"，且不会再复活。
+-- 说明:App 对"列不存在"是容错的（会退化成真删），但**不执行这段就只有单机删除生效**。
+-- =========================================================
+alter table public.transactions add column if not exists deleted_at timestamptz;
+alter table public.loans        add column if not exists deleted_at timestamptz;
+

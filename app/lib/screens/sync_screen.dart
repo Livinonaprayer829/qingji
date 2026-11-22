@@ -16,9 +16,13 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
   AppData? _cloud;
   bool _loading = false;
 
+  /// 最近一次同步的错误原文（常驻显示，方便截图定位；不做"一闪就没"的 toast）
+  String? _err;
+
   @override
   void initState() {
     super.initState();
+    _err = ref.read(appDataProvider.notifier).lastSyncError;
     _loadCloud();
   }
 
@@ -62,22 +66,35 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
   Future<void> _incremental() async {
     setState(() => _loading = true);
     try {
-      await ref.read(appDataProvider.notifier).syncIncremental();
+      final notifier = ref.read(appDataProvider.notifier);
+      await notifier.syncIncremental();
       await _loadCloud();
-      final loansErr = ref.read(appDataProvider.notifier).lastLoansError;
-      if (mounted) {
-        if (loansErr != null) {
-          final missing =
-              loansErr.contains('does not exist') || loansErr.contains('relation');
-          _toast(missing
-              ? '记账已同步;借还失败:云端 loans 表未创建,请在 Supabase 执行建表 SQL'
-              : '记账已同步;借还失败: $loansErr');
-        } else {
-          _toast('同步完成');
-        }
+      if (!mounted) return;
+
+      final pushErr = notifier.lastPushError;
+      final loansErr = notifier.lastLoansError;
+      final localCount = ref.read(appDataProvider).transactions.length;
+
+      if (pushErr != null) {
+        // 本地已经拿到数据了，只是没推上云 —— 把真实原因说清楚
+        setState(() => _err = pushErr);
+        _toast('本地已更新（$localCount 条），但上传云端失败：$pushErr');
+      } else if (loansErr != null) {
+        final missing =
+            loansErr.contains('does not exist') || loansErr.contains('relation');
+        setState(() => _err = loansErr);
+        _toast(missing
+            ? '记账已同步;借还失败:云端 loans 表未创建,请在 Supabase 执行建表 SQL'
+            : '记账已同步;借还失败: $loansErr');
+      } else {
+        setState(() => _err = null);
+        _toast('同步完成（本地 $localCount 条）');
       }
     } catch (e) {
-      if (mounted) _toast('同步失败: $e');
+      if (mounted) {
+        setState(() => _err = e.toString());
+        _toast('同步失败: $e');
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -229,6 +246,36 @@ class _SyncScreenState extends ConsumerState<SyncScreen> {
               child: const Text('从云端下载'),
             ),
             const SizedBox(height: 10),
+            if (_err != null) ...[
+              const SizedBox(height: 4),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF2F2),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFFCDD2)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '最近一次同步错误（可截图给阿行）',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFD32F2F)),
+                    ),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      _err!,
+                      style: const TextStyle(
+                          fontSize: 11.5, color: Color(0xFFB71C1C)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             TextButton(
               onPressed: _loading ? null : _signOut,
               style: TextButton.styleFrom(

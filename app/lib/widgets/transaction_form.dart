@@ -29,6 +29,9 @@ class TxnForm extends ConsumerStatefulWidget {
 class _TxnFormState extends ConsumerState<TxnForm> {
   late TxType _type;
   late String _categoryId;
+  /// 用户手动点选过的分类（按收支类型记）：切走再切回来要恢复它，
+  /// 只有"从没手动选过"时才用按时间的默认规则。
+  final Map<TxType, String> _manualCat = {};
   String? _accountId;
   final _amountCtl = TextEditingController();
   final _noteCtl = TextEditingController();
@@ -42,6 +45,8 @@ class _TxnFormState extends ConsumerState<TxnForm> {
     if (e != null) {
       _type = e.type;
       _categoryId = e.categoryId;
+      // 编辑时把原分类视作"手动选过"，切收支再切回来能恢复
+      _manualCat[e.type] = e.categoryId;
       _accountId = e.accountId;
       _amountCtl.text = e.amount.toStringAsFixed(2);
       _noteCtl.text = e.note ?? '';
@@ -98,6 +103,32 @@ class _TxnFormState extends ConsumerState<TxnForm> {
       if (c.name.contains(want)) return c.id;
     }
     return null;
+  }
+
+  /// 切换 支出 / 收入 时的默认分类：
+  /// - 该类型下**手动选过** → 恢复那个（B 方案）
+  /// - 没选过 + 支出 → 按时间规则（6-10 早餐 / 11-14 午餐 / 16-22 晚餐 / 其余购物）
+  /// - 没选过 + 收入 → 第一个
+  void _switchType(TxType t) {
+    if (t == _type) return;
+    setState(() {
+      _type = t;
+      final list = ref
+          .read(appDataProvider)
+          .categories
+          .where((c) => c.type == t)
+          .toList();
+      if (list.isEmpty) return;
+
+      final remembered = _manualCat[t];
+      if (remembered != null && list.any((c) => c.id == remembered)) {
+        _categoryId = remembered;
+      } else if (t == TxType.expense) {
+        _categoryId = _timeBasedCategoryId(list) ?? list.first.id;
+      } else {
+        _categoryId = list.first.id;
+      }
+    });
   }
 
   @override
@@ -176,13 +207,7 @@ class _TxnFormState extends ConsumerState<TxnForm> {
           ),
           SegmentedButton<TxType>(
             selected: {_type},
-            onSelectionChanged: (s) {
-              setState(() {
-                _type = s.first;
-                final list = _cats;
-                if (list.isNotEmpty) _categoryId = list.first.id;
-              });
-            },
+            onSelectionChanged: (s) => _switchType(s.first),
             segments: const [
               ButtonSegment(value: TxType.expense, label: Text('支出')),
               ButtonSegment(value: TxType.income, label: Text('收入')),
@@ -208,7 +233,11 @@ class _TxnFormState extends ConsumerState<TxnForm> {
                 .map((c) => ChoiceChip(
                       label: Text('${c.icon} ${c.name}'),
                       selected: _categoryId == c.id,
-                      onSelected: (_) => setState(() => _categoryId = c.id),
+                      onSelected: (_) => setState(() {
+                        _categoryId = c.id;
+                        // 记住"这一类型下用户手动选的分类"，切走再切回来要恢复它
+                        _manualCat[_type] = c.id;
+                      }),
                     ))
                 .toList(),
           ),
