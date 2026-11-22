@@ -1,8 +1,8 @@
 {
   "_comment": "青记 更新清单。发版后请把 version / url / size / notes 改成新版本。App 会优先读这个文件（jsDelivr + raw 双源），api.github.com 只做兜底。",
-  "version": "1.5.11",
-  "notes": "统计页默认按周、上半屏压缩让柱状图整屏可见、加号按时间自动选分类",
-  "url": "https://github.com/Livinonaprayer829/qingji/releases/download/v1.5.11/qingji-latest.apk",
+  "version": "1.5.15",
+  "notes": "修复：记账保存后本地少一条（云端覆盖）、15 点等时段默认分类错成其他、日历格子金额折行溢出、开 VPN 时检测不到更新。",
+  "url": "https://github.com/Livinonaprayer829/qingji/releases/download/v1.5.15/qingji-latest.apk",
   "name": "qingji-latest.apk",
-  "size": 58245678
+  "size": 58262062
 }
