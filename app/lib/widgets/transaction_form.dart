@@ -71,12 +71,15 @@ class _TxnFormState extends ConsumerState<TxnForm> {
   /// - 6~10 点 ⇒ 早餐
   /// - 11~14 点 ⇒ 午餐
   /// - 16~22 点 ⇒ 晚餐
-  /// - 其余时段（15 点、23 点、凌晨）不干预，保持原来的默认（购物）
+  /// - 其余时段（15 点、23 点、凌晨）⇒ **购物**
   ///
-  /// 找不到对应分类（比如用户改过名字/删掉了）时返回 null，调用方继续用原默认。
+  /// 注意：这里对"购物"是**按名字显式指定**的，不能依赖"分类列表第一个"，
+  /// 因为本地/云端存下来的分类顺序并不固定（实测第一个可能是「其他」）。
+  ///
+  /// 找不到对应分类（用户改名/删掉）时返回 null，调用方继续用原默认。
   String? _timeBasedCategoryId(List<Category> expenses) {
     final h = DateTime.now().hour;
-    final String? want;
+    final String want;
     if (h >= 6 && h <= 10) {
       want = '早餐';
     } else if (h >= 11 && h <= 14) {
@@ -84,9 +87,8 @@ class _TxnFormState extends ConsumerState<TxnForm> {
     } else if (h >= 16 && h <= 22) {
       want = '晚餐';
     } else {
-      want = null;
+      want = '购物';
     }
-    if (want == null) return null;
 
     for (final c in expenses) {
       if (c.name == want) return c.id;

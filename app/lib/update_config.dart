@@ -32,6 +32,21 @@ class UpdateConfig {
   static String get latestReleaseApi =>
       'https://api.github.com/repos/$owner/$repo/releases/latest';
 
+  /// ===== 静态版本清单（主检测源）=====
+  /// 发版时更新仓库根目录的 `version.json`，App 优先读它 ——
+  /// 这样不依赖 api.github.com（未认证限流 60 次/小时、按出口 IP 算；
+  /// 挂 VPN 时出口 IP 常被多人共用 ⇒ 403 ⇒ 表现为"检查不到更新"）。
+  ///
+  /// 1) jsDelivr CDN：国内可直连（有缓存，可能滞后几小时）
+  /// 2) raw.githubusercontent.com：无缓存、实时
+  /// 3) api.github.com：最后兜底
+  /// App 会**并行**请求这几个源，取版本号最大的那个 ⇒ 缓存滞后也不会误判"已是最新"。
+  static String get manifestJsDelivr =>
+      'https://cdn.jsdelivr.net/gh/$owner/$repo@main/version.json';
+
+  static String get manifestRaw =>
+      'https://raw.githubusercontent.com/$owner/$repo/main/version.json';
+
   /// Release 页面（网页端/兜底跳转用）
   static String get releasesPage =>
       'https://github.com/$owner/$repo/releases/latest';

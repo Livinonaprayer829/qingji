@@ -86,19 +86,35 @@ class _CalendarScreenState extends ConsumerState<CalendarScreen> {
             ),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text('$d',
+                    maxLines: 1,
                     style: TextStyle(
                         fontWeight: has || isToday
                             ? FontWeight.bold
                             : FontWeight.normal)),
+                // 金额**必须单行**：格子很窄，像 ¥-52.99 这种比 ¥-25 宽的会换行、
+                // 第二行溢出格子（表现为"时好时坏"，取决于当天金额长短）。
+                // 用 FittedBox 在放不下时按比例缩小，保证永远一行、不出格。
                 if (has)
-                  Text('¥${_fmtNet(sum)}',
-                      style: TextStyle(
-                          fontSize: 10,
-                          color: sum < 0
-                              ? Colors.redAccent
-                              : Theme.of(context).colorScheme.primary)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '¥${_fmtNet(sum)}',
+                        maxLines: 1,
+                        softWrap: false,
+                        overflow: TextOverflow.visible,
+                        style: TextStyle(
+                            fontSize: 10,
+                            color: sum < 0
+                                ? Colors.redAccent
+                                : Theme.of(context).colorScheme.primary),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),

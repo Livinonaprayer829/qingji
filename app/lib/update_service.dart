@@ -41,6 +41,63 @@ class UpdateInfo {
   }
 }
 
+/// 检测结果状态
+enum UpdateCheckStatus {
+  /// 有新版本
+  updateAvailable,
+
+  /// 已是最新
+  upToDate,
+
+  /// 网络不通 / 源都失败
+  networkError,
+
+  /// GitHub 接口限流（403/429，常见于挂了 VPN 的共享出口 IP）
+  rateLimited,
+
+  /// 没配置 owner/repo
+  notConfigured,
+}
+
+/// 一次检测的完整结果（带可读原因，供设置页提示）
+class UpdateCheckResult {
+  final UpdateCheckStatus status;
+  final UpdateInfo? info;
+  final String localVersion;
+
+  /// 命中的源：jsdelivr / raw / github-api
+  final String source;
+
+  const UpdateCheckResult({
+    required this.status,
+    required this.localVersion,
+    this.info,
+    this.source = '',
+  });
+
+  bool get hasUpdate =>
+      status == UpdateCheckStatus.updateAvailable && info != null;
+}
+
+/// 内部用：某个源返回的候选版本
+class _Candidate {
+  final String version;
+  final String notes;
+  final String url;
+  final String name;
+  final int? size;
+  final String source;
+
+  const _Candidate({
+    required this.version,
+    required this.url,
+    required this.name,
+    required this.source,
+    this.notes = '',
+    this.size,
+  });
+}
+
 /// App 内更新服务:检测 → 下载 → 唤起系统安装
 class UpdateService {
   final Dio _dio = Dio(
@@ -51,6 +108,9 @@ class UpdateService {
     ),
   );
 
+  /// 这一次检测里 GitHub API 是否被限流（403/429）
+  bool _rateLimited = false;
+
   /// 当前 App 版本名,如 1.1.6
   static Future<String> currentVersion() async {
     if (kIsWeb) return '0.0.0';
@@ -58,15 +118,126 @@ class UpdateService {
     return info.version;
   }
 
-  /// 检测更新。无更新、未配置、或请求失败都返回 null(静默,不打扰用户)。
-  /// force=true 时忽略本地"今日已提示"记录。
+  /// 兼容旧调用：只在"有新版本"时返回信息，其余一律 null（启动静默检测用）。
   Future<UpdateInfo?> checkForUpdate() async {
-    if (!UpdateConfig.enabled) return null;
+    final r = await checkDetailed();
+    return r.hasUpdate ? r.info : null;
+  }
+
+  /// 完整检测：**并行**请求三个源，取版本号最大的那个结果
+  /// - 静态清单（jsDelivr CDN）：国内可直连，不消耗 GitHub API 额度
+  /// - 静态清单（raw.githubusercontent.com）：无缓存，实时
+  /// - GitHub API：兜底（未认证 60 次/小时，挂 VPN 常被限流）
+  ///
+  /// 取"最大版本"而不是"第一个成功的"，是为了避免 jsDelivr 缓存滞后
+  /// 导致把已发布的新版本误判成"已是最新"。
+  Future<UpdateCheckResult> checkDetailed() async {
+    final local = await currentVersion();
+    if (!UpdateConfig.enabled) {
+      return UpdateCheckResult(
+          status: UpdateCheckStatus.notConfigured, localVersion: local);
+    }
+
+    _rateLimited = false;
+
+    final results = await Future.wait<_Candidate?>([
+      _fromManifest(UpdateConfig.manifestJsDelivr, 'jsdelivr'),
+      _fromManifest(UpdateConfig.manifestRaw, 'raw'),
+      _fromApi(),
+    ]);
+
+    _Candidate? best;
+    for (final c in results) {
+      if (c == null) continue;
+      if (best == null || _isNewer(c.version, best.version)) best = c;
+    }
+
+    if (best == null) {
+      return UpdateCheckResult(
+        status: _rateLimited
+            ? UpdateCheckStatus.rateLimited
+            : UpdateCheckStatus.networkError,
+        localVersion: local,
+      );
+    }
+
+    final info = UpdateInfo(
+      version: best.version,
+      notes: best.notes,
+      apkUrl: best.url,
+      apkName: best.name,
+      apkSize: best.size,
+    );
+
+    if (!_isNewer(best.version, local)) {
+      return UpdateCheckResult(
+        status: UpdateCheckStatus.upToDate,
+        info: info,
+        localVersion: local,
+        source: best.source,
+      );
+    }
+
+    return UpdateCheckResult(
+      status: UpdateCheckStatus.updateAvailable,
+      info: info,
+      localVersion: local,
+      source: best.source,
+    );
+  }
+
+  /// 读仓库根目录的静态清单 `version.json`
+  ///
+  /// 格式：
+  /// ```json
+  /// { "version": "1.5.14", "notes": "更新说明",
+  ///   "url": "https://github.com/{owner}/{repo}/releases/download/v1.5.14/qingji-latest.apk",
+  ///   "size": 58245678, "name": "qingji-latest.apk" }
+  /// ```
+  Future<_Candidate?> _fromManifest(String url, String source) async {
     try {
-      final resp = await _dio.get(UpdateConfig.latestReleaseApi);
-      if (resp.statusCode != 200 || resp.data == null) return null;
+      final resp = await _dio.get(
+        url,
+        options: Options(
+          validateStatus: (_) => true,
+          headers: const {'Cache-Control': 'no-cache'},
+        ),
+      );
+      if (resp.statusCode != 200) return null;
       final data = resp.data;
-      if (data is! Map<String, dynamic>) return null;
+      if (data is! Map) return null;
+
+      final version = _normalize((data['version'] ?? '').toString());
+      final apkUrl = (data['url'] ?? '').toString();
+      if (version.isEmpty || apkUrl.isEmpty) return null;
+
+      return _Candidate(
+        version: version,
+        notes: (data['notes'] ?? '').toString(),
+        url: apkUrl,
+        name: (data['name'] ?? 'qingji-latest.apk').toString(),
+        size: data['size'] is int ? data['size'] as int : null,
+        source: source,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 读 GitHub Release API（兜底；403/429 记为"被限流"）
+  Future<_Candidate?> _fromApi() async {
+    try {
+      final resp = await _dio.get(
+        UpdateConfig.latestReleaseApi,
+        options: Options(validateStatus: (_) => true),
+      );
+      if (resp.statusCode == 403 || resp.statusCode == 429) {
+        _rateLimited = true;
+        return null;
+      }
+      if (resp.statusCode != 200) return null;
+      final data = resp.data;
+      if (data is! Map) return null;
 
       final tag = (data['tag_name'] ?? '').toString();
       final remote = _normalize(tag);
@@ -74,32 +245,27 @@ class UpdateService {
 
       // 找 Release 附件里的第一个 .apk
       final assets = data['assets'];
-      Map<String, dynamic>? apk;
+      Map? apk;
       if (assets is List) {
         for (final a in assets) {
-          if (a is Map<String, dynamic>) {
-            final name = (a['name'] ?? '').toString();
-            if (name.toLowerCase().endsWith('.apk')) {
-              apk = a;
-              break;
-            }
+          if (a is Map &&
+              (a['name'] ?? '').toString().toLowerCase().endsWith('.apk')) {
+            apk = a;
+            break;
           }
         }
       }
       if (apk == null) return null;
 
-      final local = await currentVersion();
-      if (!_isNewer(remote, local)) return null;
-
-      return UpdateInfo(
+      return _Candidate(
         version: remote,
         notes: (data['body'] ?? '').toString(),
-        apkUrl: (apk['browser_download_url'] ?? '').toString(),
-        apkName: (apk['name'] ?? 'app-release.apk').toString(),
-        apkSize: apk['size'] is int ? apk['size'] as int : null,
+        url: (apk['browser_download_url'] ?? '').toString(),
+        name: (apk['name'] ?? 'qingji-latest.apk').toString(),
+        size: apk['size'] is int ? apk['size'] as int : null,
+        source: 'github-api',
       );
     } catch (_) {
-      // 网络不通 / 仓库未建 / 接口限流:都不应该弹错误打扰用户
       return null;
     }
   }
