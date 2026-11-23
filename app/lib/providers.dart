@@ -45,6 +45,9 @@ class AppDataNotifier extends Notifier<AppData> {
   @override
   AppData build() {
     _repo = ref.read(repositoryProvider);
+    // 让仓库在"同步写本地"前能拿到当前内存最新数据，
+    // 避免用几十秒前的快照把刚记的一笔覆盖掉（本地 249 / 云端 250）
+    _repo.currentLocal = () => state;
     _init();
     Supabase.instance.client.auth.onAuthStateChange.listen((data) {
       if (data.session == null) {
@@ -133,6 +136,8 @@ class AppDataNotifier extends Notifier<AppData> {
         debugPrint('sync normalize failed: $e');
       }
 
+      // 归一时用户可能又记了一笔：写盘前再并一次当前内存，避免覆盖
+      next = _repo.mergeWithCloud(state, next);
       state = next;
       await _repo.saveLocal(state);
       lastSyncError = null;

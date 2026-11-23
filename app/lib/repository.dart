@@ -185,7 +185,17 @@ class DataRepository {
     }
   }
 
-  Future<void> saveLocal(AppData data) async {
+  /// 写本地串行队列：记账 / 删除 / 同步 都可能写同一个文件，
+  /// 不排队的话"同步用旧快照写盘"会把刚记的一笔覆盖掉（本地少一条）。
+  Future<void> _saveChain = Future<void>.value();
+
+  Future<void> saveLocal(AppData data) {
+    final run = _saveChain.then((_) => _writeLocalFile(data));
+    _saveChain = run.catchError((_) {}); // 链不能因一次失败断掉
+    return run;
+  }
+
+  Future<void> _writeLocalFile(AppData data) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(
       _key,
@@ -672,6 +682,11 @@ class DataRepository {
     }
   }
 
+  /// 由 provider 注入：读取**当前内存中的最新数据**。
+  /// 同步写盘前会用它再合并一次 —— 否则同步用的是几十秒前的快照，
+  /// 会把这几秒里刚记的一笔覆盖掉（现象：本地 249 / 云端 250）。
+  AppData Function()? currentLocal;
+
   /// 最近一次全量推送的错误（供同步页展示；null = 成功）
   String? lastPushError;
 
@@ -949,7 +964,12 @@ class DataRepository {
     if (!isSignedIn) return null;
     final cloud = await fetchCloud();
     if (cloud == null) return null;
-    final merged = mergeWithCloud(local, cloud);
+    var merged = mergeWithCloud(local, cloud);
+
+    // ⚠️ 写盘前用"当前内存"再合并一次：拉取+合并要几秒，这期间用户可能刚记了一笔，
+    // 用旧快照写盘就会把它冲掉（本地少一条、云端有）。这里补上。
+    final latest = currentLocal?.call();
+    if (latest != null) merged = mergeWithCloud(latest, merged);
 
     // ① 先把合并结果落地：这一步成功，本地就一定有数据
     await saveLocal(merged);
